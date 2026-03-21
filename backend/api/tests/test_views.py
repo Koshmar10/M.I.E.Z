@@ -19,7 +19,7 @@ class IsEvenTests(TestCase):
     def test_zero(self):
         response = self.client.get('/api/is_even/', {'number': 0})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['even'], False)
+        self.assertEqual(response.json()['even'], True)
 
     def test_negative_even(self):
         response = self.client.get('/api/is_even/', {'number': -2})

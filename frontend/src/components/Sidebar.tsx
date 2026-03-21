@@ -7,6 +7,7 @@ const Sidebar = () => {
       <div className='text-red-500'>mama are multe mere si petru este foarte ok</div>
       <div className='text-yellow-300'>new deployment</div>
       <div>second new deploy</div>
+      <div>deploy attempt with failed tests</div>
     </>
   )
 }

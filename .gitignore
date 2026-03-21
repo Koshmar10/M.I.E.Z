@@ -75,4 +75,5 @@ credentials.yml.enc
 *~
 *.lock
 *.cache
-.cache-loader
+.cache-loader__pycache__/
+*.pyc

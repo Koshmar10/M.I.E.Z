@@ -3,6 +3,7 @@ import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import heroImg from './assets/hero.png'
 import './App.css'
+import Sidebar from './components/Sidebar'
 
 function App() {
   useEffect(() => {
@@ -13,8 +14,8 @@ function App() {
   return (
     <>
       <div>
-
-        <p>Denis e un homosexual a iesit la date cu un baiat</p>
+        <Sidebar />
+        <h1 className="text-3xl font-bold text-blue-500">MIEZ</h1>
       </div>
 
     </>

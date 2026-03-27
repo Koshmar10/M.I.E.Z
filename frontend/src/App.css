@@ -1,0 +1,230 @@
+:root {
+	--bg: #eef2ff;
+	--surface: #ffffff;
+	--surface-soft: #f5f7ff;
+	--ink: #1c2a4e;
+	--ink-subtle: #53618a;
+	--accent: #1f5eff;
+	--accent-soft: #dde7ff;
+	--danger: #d22f3a;
+	--border: #d8e0ff;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	background: radial-gradient(circle at 10% 20%, #ffffff 0%, var(--bg) 40%, #e6ecff 100%);
+	color: var(--ink);
+	font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+#root {
+	min-height: 100vh;
+}
+
+.app-shell {
+	display: flex;
+	min-height: 100vh;
+	position: relative;
+}
+
+.sidebar {
+	width: 260px;
+	padding: 1rem;
+	background: var(--surface);
+	border-right: 1px solid var(--border);
+	display: flex;
+	flex-direction: column;
+	transition: width 0.25s ease;
+}
+
+.sidebar.is-collapsed {
+	width: 88px;
+}
+
+.sidebar-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 1.5rem;
+	min-height: 44px;
+}
+
+.brand-name {
+	font-weight: 700;
+	letter-spacing: 0.03em;
+}
+
+.hamburger-btn {
+	border: 1px solid var(--border);
+	background: var(--surface-soft);
+	color: var(--ink);
+	width: 40px;
+	height: 40px;
+	border-radius: 10px;
+	cursor: pointer;
+	display: grid;
+	place-items: center;
+}
+
+.sidebar-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+}
+
+.nav-link {
+	border: 1px solid transparent;
+	border-radius: 12px;
+	color: var(--ink-subtle);
+	text-decoration: none;
+	min-height: 44px;
+	padding: 0.7rem 0.75rem;
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	cursor: pointer;
+	background: transparent;
+	font: inherit;
+}
+
+.nav-link.active {
+	background: var(--accent-soft);
+	border-color: #bfd1ff;
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.nav-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 999px;
+	background: currentColor;
+}
+
+.sidebar-footer {
+	margin-top: auto;
+	padding-top: 1rem;
+	border-top: 1px solid var(--border);
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+}
+
+.logout-btn {
+	color: var(--danger);
+}
+
+.shell-main {
+	flex: 1;
+	padding: 1.25rem;
+	display: flex;
+	flex-direction: column;
+}
+
+.top-bar {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	padding: 0.85rem 1rem;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.top-bar h1 {
+	margin: 0;
+	font-size: 1.25rem;
+}
+
+.notification-btn {
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	border: 1px solid var(--border);
+	background: var(--surface-soft);
+	color: var(--ink);
+	position: relative;
+	display: grid;
+	place-items: center;
+	cursor: pointer;
+}
+
+.notification-btn svg {
+	width: 20px;
+	height: 20px;
+}
+
+.notification-badge {
+	position: absolute;
+	top: -4px;
+	right: -2px;
+	min-width: 18px;
+	height: 18px;
+	border-radius: 999px;
+	font-size: 0.7rem;
+	font-weight: 700;
+	background: var(--danger);
+	color: #fff;
+	display: grid;
+	place-items: center;
+	padding: 0 0.25rem;
+}
+
+.content-area {
+	flex: 1;
+	padding-top: 1rem;
+}
+
+.module-card {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	padding: 1.2rem;
+}
+
+.module-card h2 {
+	margin: 0 0 0.5rem;
+}
+
+.module-card p {
+	margin: 0;
+	color: var(--ink-subtle);
+}
+
+.assistant-fab {
+	position: fixed;
+	right: 1.2rem;
+	bottom: 1.2rem;
+	border: none;
+	border-radius: 999px;
+	padding: 0.75rem 1rem;
+	font-weight: 700;
+	color: white;
+	background: linear-gradient(135deg, #1f5eff, #00a8ff);
+	box-shadow: 0 12px 28px rgba(31, 94, 255, 0.35);
+	cursor: pointer;
+}
+
+@media (max-width: 768px) {
+	.sidebar {
+		width: 78px;
+	}
+
+	.sidebar .brand-name,
+	.sidebar .nav-link span {
+		display: none;
+	}
+
+	.sidebar .nav-link {
+		justify-content: center;
+	}
+
+	.shell-main {
+		padding: 0.75rem;
+	}
+}

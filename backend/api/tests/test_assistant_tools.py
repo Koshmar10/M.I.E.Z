@@ -11,6 +11,8 @@ from api.agent.operations import (
     create_ticket,
     generate_report,
     get_dashboard_summary,
+    query_inventory,
+    query_orders,
     query_employees,
     query_tickets,
 )
@@ -70,9 +72,166 @@ class AssistantToolTests(TestCase):
         self.assertEqual(results[0]['id'], ticket_one.id)
         self.assertTrue(all(item['status'] == 'NEW' for item in results))
 
+    def test_query_tickets_filters_priority_assigned_and_limit(self):
+        assigned = User.objects.create_user(username='assigned-tech', email='assigned-tech@example.com', role=User.Role.IT)
+        for index in range(12):
+            Ticket.objects.create(
+                ticket_number=f'TKT-2{index:04d}',
+                title=f'Ticket {index}',
+                status=Ticket.Status.OPEN,
+                priority=Ticket.Priority.HIGH,
+                assigned_to=assigned,
+                requested_by=self.it_user,
+            )
+
+        Ticket.objects.create(
+            ticket_number='TKT-99998',
+            title='Non matching priority',
+            status=Ticket.Status.OPEN,
+            priority=Ticket.Priority.LOW,
+            assigned_to=assigned,
+            requested_by=self.it_user,
+        )
+
+        results = query_tickets(
+            user=self.it_user,
+            status='NEW',
+            priority='HIGH',
+            assigned_to=assigned.id,
+            limit=50,
+        )
+
+        self.assertEqual(len(results), 10)
+        self.assertTrue(all(item['status'] == 'NEW' for item in results))
+
+    def test_query_orders_filters_and_caps_at_ten(self):
+        customer_target = Customer.objects.create(name='Acme Retail')
+        customer_other = Customer.objects.create(name='Other Corp')
+
+        for _ in range(12):
+            Order.objects.create(
+                customer=customer_target,
+                created_by=self.sales_user,
+                value_ron='250.00',
+                status=Order.Status.PENDING,
+                channel=Order.Channel.WEBSITE,
+            )
+
+        Order.objects.create(
+            customer=customer_target,
+            created_by=self.sales_user,
+            value_ron='100.00',
+            status=Order.Status.SHIPPED,
+            channel=Order.Channel.WEBSITE,
+        )
+        Order.objects.create(
+            customer=customer_other,
+            created_by=self.sales_user,
+            value_ron='100.00',
+            status=Order.Status.PENDING,
+            channel=Order.Channel.DIRECT,
+        )
+
+        results = query_orders(
+            user=self.sales_user,
+            status='PENDING',
+            channel='WEBSITE',
+            customer='Acme',
+            limit=20,
+        )
+
+        self.assertEqual(len(results), 10)
+        self.assertTrue(all(item['status'] == Order.Status.PENDING for item in results))
+        self.assertTrue(all(item['channel'] == Order.Channel.WEBSITE for item in results))
+        self.assertTrue(all('Acme' in item['customer_name'] for item in results))
+
     def test_query_employees_denied_for_sales_role(self):
         with self.assertRaises(PermissionError):
             query_employees(user=self.sales_user)
+
+    def test_query_employees_filters_department_role_active_and_limit(self):
+        for index in range(12):
+            User.objects.create_user(
+                username=f'sales-emp-{index}',
+                email=f'sales-emp-{index}@example.com',
+                role=User.Role.SALES,
+                department=self.department,
+                is_active=True,
+            )
+
+        User.objects.create_user(
+            username='sales-inactive',
+            email='sales-inactive@example.com',
+            role=User.Role.SALES,
+            department=self.department,
+            is_active=False,
+        )
+        User.objects.create_user(
+            username='hr-active',
+            email='hr-active@example.com',
+            role=User.Role.HR,
+            department=self.hr_department,
+            is_active=True,
+        )
+
+        results = query_employees(
+            user=self.hr_user,
+            department=self.department.slug,
+            role='SALES',
+            is_active=True,
+            limit=99,
+        )
+
+        self.assertEqual(len(results), 10)
+        self.assertTrue(all(item['role'] == User.Role.SALES for item in results))
+        self.assertTrue(all(item['is_active'] for item in results))
+        self.assertTrue(all(item['department']['slug'] == self.department.slug for item in results))
+
+    def test_query_inventory_filters_status_category_below_min_and_limit(self):
+        for index in range(12):
+            Product.objects.create(
+                name=f'Inventory Item {index}',
+                sku=f'SKU-INV-{index}',
+                category=Product.Category.INVENTORY,
+                stock_count=2,
+                min_stock=10,
+                unit_price_ron='10.00',
+            )
+
+        Product.objects.create(
+            name='General Item',
+            sku='SKU-GENERAL-1',
+            category=Product.Category.GENERAL,
+            stock_count=2,
+            min_stock=10,
+            unit_price_ron='5.00',
+        )
+        Product.objects.create(
+            name='Stock Healthy Item',
+            sku='SKU-INV-OK',
+            category=Product.Category.INVENTORY,
+            stock_count=30,
+            min_stock=10,
+            unit_price_ron='20.00',
+        )
+
+        inventory_user = User.objects.create_user(
+            username='inventory-manager',
+            email='inventory-manager@example.com',
+            role=User.Role.INVENTORY,
+        )
+
+        results = query_inventory(
+            user=inventory_user,
+            status='low_stock',
+            category='INVENTORY',
+            below_min_stock=True,
+            limit=50,
+        )
+
+        self.assertEqual(len(results), 10)
+        self.assertTrue(all(item['status'] == 'Low Stock' for item in results))
+        self.assertTrue(all(item['category'] == Product.Category.INVENTORY for item in results))
 
     def test_create_ticket_sets_requested_by_to_request_user(self):
         ticket = create_ticket(

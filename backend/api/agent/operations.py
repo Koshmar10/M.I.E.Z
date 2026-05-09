@@ -6,10 +6,10 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
-from django.db.models import Count, Sum
+from django.db.models import Count, F, Q, Sum
 from django.utils import timezone
 
-from api.models import Department, LeaveRequest, Order, Report, Ticket, User
+from api.models import Department, LeaveRequest, Order, Product, Report, Ticket, User
 from api.report_utils import generate_report_file
 
 from .tools import Tool, agent_tool, get_registry, register_tool
@@ -56,6 +56,37 @@ def _serialize_employee(employee: User) -> dict[str, Any]:
         'department': _serialize_department(employee.department),
         'is_active': employee.is_active,
     }
+
+
+def _serialize_order(order: Order) -> dict[str, Any]:
+    return {
+        'id': order.id,
+        'order_number': order.order_number,
+        'status': order.status,
+        'channel': order.channel,
+        'customer_id': order.customer_id,
+        'customer_name': order.customer.name if order.customer else None,
+        'value_ron': f'{Decimal(str(order.value_ron or 0)).quantize(Decimal("0.01")):.2f}',
+        'date': order.date.isoformat() if order.date else None,
+    }
+
+
+def _serialize_inventory(product: Product) -> dict[str, Any]:
+    return {
+        'id': product.id,
+        'name': product.name,
+        'sku': product.sku,
+        'category': product.category,
+        'stock_count': product.stock_count,
+        'min_stock': product.min_stock,
+        'status': product.availability,
+    }
+
+
+def _normalized_limit(limit: int | None, default_limit: int = 10) -> int:
+    if limit is None:
+        return default_limit
+    return max(1, min(int(limit), 10))
 
 
 @agent_tool(name='get_dashboard_summary', description='Get dashboard summary data by module.')
@@ -133,8 +164,16 @@ def get_dashboard_summary(module: str, user: User) -> dict[str, Any]:
 
 
 @agent_tool(name='query_tickets', description='Query tickets by status.')
-def query_tickets(status: str, user: User) -> list[dict[str, Any]]:
+def query_tickets(
+    user: User,
+    status: str | None = None,
+    priority: str | None = None,
+    assigned_to: int | str | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
     _require_roles(user, [User.Role.CEO, User.Role.IT], 'Only CEO and IT can query tickets.')
+
+    queryset = Ticket.objects.select_related('department', 'requested_by', 'assigned_to').all()
 
     status_name = (status or '').strip().upper()
     status_map = {
@@ -144,20 +183,133 @@ def query_tickets(status: str, user: User) -> list[dict[str, Any]]:
         'RESOLVED': Ticket.Status.RESOLVED,
         'CLOSED': Ticket.Status.CLOSED,
     }
-    if status_name not in status_map:
+    if status_name and status_name not in status_map:
         raise ValueError(f'Unsupported ticket status: {status}')
+    if status_name:
+        queryset = queryset.filter(status=status_map[status_name])
 
-    resolved_status = status_map[status_name]
-    tickets = Ticket.objects.select_related('department', 'requested_by').filter(status=resolved_status).order_by('id')
+    if priority:
+        priority_name = priority.strip().upper()
+        valid_priorities = {choice[0] for choice in Ticket.Priority.choices}
+        if priority_name not in valid_priorities:
+            raise ValueError(f'Unsupported ticket priority: {priority}')
+        queryset = queryset.filter(priority=priority_name)
+
+    if assigned_to is not None:
+        if isinstance(assigned_to, int) or (isinstance(assigned_to, str) and assigned_to.isdigit()):
+            queryset = queryset.filter(assigned_to_id=int(assigned_to))
+        elif isinstance(assigned_to, str):
+            queryset = queryset.filter(assigned_to__username=assigned_to)
+        else:
+            raise ValueError('assigned_to must be a user id or username')
+
+    tickets = queryset.order_by('-created_at')[:_normalized_limit(limit)]
     return [_serialize_ticket(ticket) for ticket in tickets]
 
 
 @agent_tool(name='query_employees', description='Query employees.')
-def query_employees(user: User) -> list[dict[str, Any]]:
+def query_employees(
+    user: User,
+    department: int | str | None = None,
+    role: str | None = None,
+    is_active: bool | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
     _require_roles(user, [User.Role.CEO, User.Role.HR], 'Only CEO and HR can query employees.')
 
-    employees = User.objects.select_related('department').all().order_by('id')
+    employees = User.objects.select_related('department').all()
+
+    if department is not None:
+        if isinstance(department, int) or (isinstance(department, str) and department.isdigit()):
+            employees = employees.filter(department_id=int(department))
+        elif isinstance(department, str):
+            employees = employees.filter(Q(department__slug=department) | Q(department__name__iexact=department))
+        else:
+            raise ValueError('department must be an id, slug, or name')
+
+    if role:
+        role_name = role.strip().upper()
+        valid_roles = {choice[0] for choice in User.Role.choices}
+        if role_name not in valid_roles:
+            raise ValueError(f'Unsupported employee role: {role}')
+        employees = employees.filter(role=role_name)
+
+    if is_active is not None:
+        employees = employees.filter(is_active=bool(is_active))
+
+    employees = employees.order_by('id')[:_normalized_limit(limit)]
     return [_serialize_employee(employee) for employee in employees]
+
+
+@agent_tool(name='query_orders', description='Query orders by status, channel, and customer.')
+def query_orders(
+    user: User,
+    status: str | None = None,
+    channel: str | None = None,
+    customer: str | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    _require_roles(user, [User.Role.CEO, User.Role.SALES], 'Only CEO and Sales can query orders.')
+
+    queryset = Order.objects.select_related('customer').all()
+
+    if status:
+        status_name = status.strip().upper()
+        valid_statuses = {choice[0] for choice in Order.Status.choices}
+        if status_name not in valid_statuses:
+            raise ValueError(f'Unsupported order status: {status}')
+        queryset = queryset.filter(status=status_name)
+
+    if channel:
+        channel_name = channel.strip().upper()
+        valid_channels = {choice[0] for choice in Order.Channel.choices}
+        if channel_name not in valid_channels:
+            raise ValueError(f'Unsupported order channel: {channel}')
+        queryset = queryset.filter(channel=channel_name)
+
+    if customer:
+        queryset = queryset.filter(customer__name__icontains=customer)
+
+    orders = queryset.order_by('-date', '-id')[:_normalized_limit(limit)]
+    return [_serialize_order(order) for order in orders]
+
+
+@agent_tool(name='query_inventory', description='Query inventory by status, category, and stock thresholds.')
+def query_inventory(
+    user: User,
+    status: str | None = None,
+    category: str | None = None,
+    below_min_stock: bool | None = None,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    _require_roles(user, [User.Role.CEO, User.Role.INVENTORY], 'Only CEO and Inventory can query inventory.')
+
+    queryset = Product.objects.all()
+
+    if category:
+        category_name = category.strip().upper()
+        valid_categories = {choice[0] for choice in Product.Category.choices}
+        if category_name not in valid_categories:
+            raise ValueError(f'Unsupported product category: {category}')
+        queryset = queryset.filter(category=category_name)
+
+    if below_min_stock is True:
+        queryset = queryset.filter(stock_count__lt=F('min_stock'))
+
+    products = queryset.order_by('id')
+
+    if status:
+        status_name = status.strip().lower()
+        status_map = {
+            'out_of_stock': 'out of stock',
+            'low_stock': 'low stock',
+            'in_stock': 'in stock',
+        }
+        normalized_status = status_map.get(status_name, status_name)
+        products = [product for product in products if product.availability.lower() == normalized_status]
+        return [_serialize_inventory(product) for product in products[:_normalized_limit(limit)]]
+
+    return [_serialize_inventory(product) for product in products[:_normalized_limit(limit)]]
 
 
 @agent_tool(name='create_ticket', description='Create a support ticket.')
@@ -211,8 +363,10 @@ def register_default_tools() -> None:
         return
 
     register_tool(Tool.from_callable(get_dashboard_summary))
+    register_tool(Tool.from_callable(query_orders, required_permission='view_sales_reports'))
     register_tool(Tool.from_callable(query_tickets, required_permission='manage_tickets'))
     register_tool(Tool.from_callable(query_employees, required_permission='manage_employees'))
+    register_tool(Tool.from_callable(query_inventory, required_permission='manage_stock'))
     register_tool(Tool.from_callable(create_ticket))
     register_tool(Tool.from_callable(create_leave_request, required_permission='process_leave_requests'))
     register_tool(Tool.from_callable(generate_report, required_permission='view_financial_reports'))

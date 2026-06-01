@@ -1,0 +1,330 @@
+@startuml architecture-domain
+!theme plain
+skinparam classAttributeIconSize 0
+hide empty methods
+skinparam packageStyle rectangle
+skinparam class {
+  BorderColor #555555
+  BackgroundColor #FAFAFA
+  HeaderBackgroundColor #DDDDDD
+}
+skinparam package {
+  BorderColor #999999
+}
+skinparam linetype ortho
+
+title M.I.E.Z — Domain Model
+
+' ============================================================
+' CORE
+' ============================================================
+package "Core" #FFF9E6 {
+
+  class User {
+    email : EmailField (unique)
+    role : Role
+    department : FK → Department
+    phone : CharField
+    position : CharField
+    employment_type : CharField
+    start_date : DateField
+    salary_ron : DecimalField
+    full_time : BooleanField
+    is_active : BooleanField
+  }
+
+  enum Role {
+    CEO
+    HR
+    SALES
+    IT
+    INVENTORY
+  }
+
+  class Department {
+    name : CharField (unique)
+    slug : SlugField (unique)
+    icon : CharField
+    created_at : DateTimeField
+  }
+
+  class Asset {
+    name : CharField
+    serial_number : CharField (unique)
+    category : LAPTOP | MONITOR | PHONE\n         | PERIPHERAL | OTHER
+    status : AVAILABLE | ASSIGNED\n       | MAINTENANCE | RETIRED
+    assigned_to : FK → User
+    notes : TextField
+    created_at : DateTimeField
+  }
+
+  User "N" -right-> "1" Department : belongs to
+  Asset "N" -left-> "0..1" User : assigned_to
+  User ..> Role
+}
+
+' ============================================================
+' SALES
+' ============================================================
+package "Sales" #FFF0F0 {
+
+  class Customer {
+    name : CharField
+    contact_name : CharField
+    contact_email : EmailField
+    contact_phone : CharField
+    address : CharField
+    location : CharField
+    tier : Gold | Silver | Bronze | Individual
+    notes : TextField
+  }
+
+  class Product {
+    name : CharField
+    sku : CharField (unique)
+    category : Electronics | Furniture\n         | Lighting | Accessories
+    unit_price_ron : DecimalField
+    stock_count : IntegerField
+    min_stock : IntegerField
+    availability : {derived}
+  }
+
+  class Order {
+    order_number : CharField (unique, auto)
+    customer : FK → Customer
+    created_by : FK → User
+    value_ron : DecimalField
+    date : DateField
+    status : PROCESSING | SHIPPED\n       | DELIVERED | CANCELLED
+    channel : EMAG | WEBSITE | DIRECT
+    notes : TextField
+  }
+
+  class OrderItem {
+    order : FK → Order
+    product : FK → Product
+    quantity : IntegerField
+    unit_price_ron : DecimalField
+    <<unique: order + product>>
+  }
+
+  class Invoice {
+    invoice_number : CharField (unique)
+    order : FK → Order
+    issued_by : FK → User
+    status : DRAFT | ISSUED | PAID | CANCELLED
+    amount_ron : DecimalField
+    issued_date : DateField
+    due_date : DateField
+  }
+
+  Order "N" -up-> "1" Customer
+  Order "N" --> "1" User : created_by
+  OrderItem "N" -down-> "1" Order
+  OrderItem "N" --> "1" Product
+  Invoice "1" -right-> "1" Order
+  Invoice "N" --> "1" User : issued_by
+}
+
+' ============================================================
+' INVENTORY
+' ============================================================
+package "Inventory" #F0F0FF {
+
+  class Supplier {
+    name : CharField
+    contact_email : EmailField
+    contact_phone : CharField
+    address : TextField
+    created_at : DateTimeField
+  }
+
+  class StockMovement {
+    movement_type : INBOUND | OUTBOUND\n             | ADJUSTMENT | WRITE_OFF
+    product : FK → Product
+    supplier : FK → Supplier (nullable)
+    quantity : IntegerField
+    expected_date : DateField
+    notes : TextField
+    created_by : FK → User
+    created_at : DateTimeField
+    <<auto-updates product.stock_count>>
+    <<triggers workflows on low stock>>
+  }
+
+  StockMovement "N" --> "1" Product
+  StockMovement "N" --> "0..1" Supplier
+  StockMovement "N" --> "1" User : created_by
+}
+
+' ============================================================
+' HR
+' ============================================================
+package "HR" #F0FFF0 {
+
+  class Attendance {
+    employee : FK → User
+    date : DateField
+    status : PRESENT | ABSENT | REMOTE | LEAVE
+    notes : TextField
+    <<unique: employee + date>>
+  }
+
+  class LeaveRequest {
+    employee : FK → User
+    department : FK → Department
+    type : VACATION | SICK | UNPAID
+    from_date : DateField
+    to_date : DateField
+    reason : TextField
+    status : PENDING | APPROVED | REJECTED
+    approved_by : FK → User (nullable)
+  }
+
+  class Contract {
+    contract_number : CharField (unique)
+    employee : FK → User
+    department : FK → Department
+    type : EMPLOYMENT | CONTRACTOR
+    start_date : DateField
+    end_date : DateField
+    salary_ron : DecimalField
+  }
+
+  class PayrollEntry {
+    employee : FK → User
+    month : DateField
+    gross_salary_ron : DecimalField
+    net_salary_ron : DecimalField
+    paid : BooleanField
+    <<unique: employee + month>>
+  }
+
+  Attendance "N" --> "1" User : employee
+  LeaveRequest "N" --> "1" User : employee
+  LeaveRequest "N" --> "1" Department
+  LeaveRequest "N" --> "0..1" User : approved_by
+  Contract "N" --> "1" User : employee
+  Contract "N" --> "1" Department
+  PayrollEntry "N" --> "1" User : employee
+}
+
+' ============================================================
+' IT / SUPPORT
+' ============================================================
+package "IT / Support" #FFF8F0 {
+
+  class Ticket {
+    ticket_number : CharField (unique, auto TKT-#####)
+    title : CharField
+    description : TextField
+    category : CharField
+    department : FK → Department
+    priority : LOW | MEDIUM | HIGH | URGENT
+    status : OPEN | IN_PROGRESS | RESOLVED | CLOSED
+    requested_by : FK → User
+    requested_for : FK → User
+    assigned_to : FK → User
+    location : CharField
+    resolved_at : DateTimeField (auto-set on RESOLVED)
+  }
+
+  class TicketComment {
+    ticket : FK → Ticket
+    author : FK → User
+    body : TextField
+    created_at : DateTimeField
+  }
+
+  Ticket "N" --> "1" Department
+  Ticket "N" --> "1" User : requested_by
+  Ticket "N" --> "0..1" User : assigned_to
+  TicketComment "N" -right-> "1" Ticket
+  TicketComment "N" --> "1" User : author
+}
+
+' ============================================================
+' SYSTEM / AUTOMATION
+' ============================================================
+package "System / Automation" #F5F0FF {
+
+  class Notification {
+    recipient : FK → User
+    type : INFO | WARNING | ERROR
+    title : CharField
+    body : TextField
+    is_read : BooleanField
+    link : URLField
+    created_at : DateTimeField
+  }
+
+  class Workflow {
+    name : CharField
+    trigger_type : TriggerType
+    trigger_config : JSONField
+    actions : JSONField
+    is_active : BooleanField
+    last_triggered_at : DateTimeField
+  }
+
+  class WorkflowLog {
+    workflow : FK → Workflow
+    triggered_at : DateTimeField
+    trigger_type : CharField
+    actions_log : JSONField
+    success : BooleanField
+  }
+
+  class SystemStatus {
+    name : CharField (unique)
+    uptime_pct : FloatField
+    status : ONLINE | DEGRADED | OFFLINE
+    last_incident_date : DateField
+  }
+
+  class SystemStatistic {
+    name : CharField (unique)
+    value : JSONField
+    computed_at : DateTimeField
+  }
+
+  class Report {
+    name : CharField
+    slug : SlugField (unique)
+    category : Sales | Finance | Inventory | HR | IT
+    period : CharField
+    file_path : CharField
+    file_size_kb : IntegerField
+    generated_by : FK → User
+    digest_data : JSONField
+    generated_at : DateTimeField
+  }
+
+  Notification "N" --> "1" User : recipient
+  WorkflowLog "N" -right-> "1" Workflow
+  Report "N" --> "1" User : generated_by
+}
+
+' ============================================================
+' AI ASSISTANT
+' ============================================================
+package "AI Assistant" #F0FFFF {
+
+  class ConversationSession {
+    user : FK → User
+    created_at : DateTimeField
+    updated_at : DateTimeField
+  }
+
+  class ConversationMessage {
+    session : FK → ConversationSession
+    role : user | assistant
+    content : TextField
+    created_at : DateTimeField
+  }
+
+  ConversationSession "N" -right-> "1" User
+  ConversationMessage "N" -down-> "1" ConversationSession
+}
+
+@enduml

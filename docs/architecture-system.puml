@@ -1,0 +1,85 @@
+@startuml architecture-system
+!theme plain
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam defaultTextAlignment center
+skinparam rectangle {
+  BorderColor #888888
+  BackgroundColor #FAFAFA
+}
+skinparam component {
+  BorderColor #555555
+}
+skinparam database {
+  BorderColor #555555
+  BackgroundColor #FFF8E6
+}
+skinparam cloud {
+  BorderColor #555555
+  BackgroundColor #E6F0FF
+}
+skinparam actor {
+  BorderColor #555555
+}
+
+title M.I.E.Z — System Architecture
+
+actor "Browser\n(User)" as Browser
+
+package "Docker Compose" #F5F5F5 {
+
+  package "frontend  :5173" #D6E8F7 {
+    component "React 19 + TypeScript\nVite 8  |  React Router 7\nTanStack Query  |  Recharts\nTailwind CSS 4" as FE
+  }
+
+  package "backend  :8000" #D6F7D6 {
+    rectangle "Django 6 + DRF" as Django {
+      component "REST API\n(50+ endpoints)" as API
+      component "Auth\n(SimpleJWT Cookies)" as Auth
+      component "Workflow Engine\n(7 triggers · 9 actions)" as WF
+      component "AI Agent Runner\n(Reports · HR Insights)" as Agent
+    }
+  }
+
+  database "PostgreSQL 15\n:5433" as DB
+
+}
+
+cloud "Anthropic\nClaude API" as Claude
+
+Browser          -right->  FE       : HTTPS
+FE               -right->  API      : REST + httpOnly JWT cookies\n(access_token · refresh_token)
+API              -down->   DB       : Django ORM
+Auth             -down->   DB
+WF               -down->   DB
+Agent            -right->  Claude   : HTTPS
+API              -[hidden]right- Auth
+Auth             -[hidden]right- WF
+WF               -[hidden]right- Agent
+
+note bottom of Auth
+  Cookie-based JWT
+  Access: 15 min lifetime
+  Refresh: 1 day lifetime
+  httpOnly · SameSite=Lax
+end note
+
+note right of WF
+  Trigger types:
+  STOCK_BELOW_MINIMUM
+  NEW_ORDER_RECEIVED
+  DAILY_AT_TIME
+  WEEKLY_AT_TIME
+  NEW_IT_TICKET
+  CONTRACT_EXPIRES
+  ORDER_EXCEEDS_THRESHOLD
+end note
+
+note right of FE
+  Role-based routing:
+  CEO · HR · SALES
+  IT · INVENTORY
+  Protected routes per role
+end note
+
+@enduml

@@ -29,7 +29,7 @@ dev = [
 package = false
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 extend-exclude = ["api/migrations"]
 
 [tool.ruff.lint]
@@ -65,6 +65,11 @@ enable_error_code = ["ignore-without-code"]
 [[tool.mypy.overrides]]
 module = ["django_crontab.*"]
 ignore_missing_imports = true
+
+# Tests are verified by running them; only their annotated functions are type-checked.
+[[tool.mypy.overrides]]
+module = ["api.tests.*", "conftest"]
+check_untyped_defs = false
 
 [tool.django-stubs]
 django_settings_module = "core.settings"

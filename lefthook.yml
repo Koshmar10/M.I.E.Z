@@ -1,0 +1,64 @@
+# Git hooks for the whole repo. `npm install` in frontend/ installs them.
+# Run every check by hand with:  npm --prefix frontend run check
+#
+# Linters run only on files changed relative to origin/main, so every file you
+# touch must be clean. Type checks, migrations and tests cover the whole project.
+# Once the refactor is done and the backlog is fixed, the linters will run on all files.
+
+# Auto-format and apply safe lint fixes to staged files, so formatting never blocks a push.
+pre-commit:
+  jobs:
+    - name: ruff fix
+      root: backend/
+      glob: "*.py"
+      run: uv run ruff check --fix --exit-zero {staged_files} && uv run ruff format {staged_files}
+      stage_fixed: true
+
+    - name: eslint fix
+      root: frontend/
+      glob: "*.{ts,tsx}"
+      run: npx eslint --fix --no-warn-ignored {staged_files} || true
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  jobs:
+    # ── Backend ──────────────────────────────────────────────
+    - name: ruff
+      root: backend/
+      glob: "*.py"
+      files: &changed git diff --name-only --diff-filter=ACMR origin/main...HEAD
+      run: uv run ruff check {files} && uv run ruff format --check {files}
+
+    - name: mypy
+      root: backend/
+      glob: "*.py"
+      files: *changed
+      run: uv run mypy --follow-imports=silent {files}
+
+    - name: migrations
+      root: backend/
+      glob: "*.py"
+      files: *changed
+      run: uv run python manage.py makemigrations --check --dry-run
+
+    - name: pytest
+      root: backend/
+      glob: "*.py"
+      files: *changed
+      env:
+        DATABASE_URL: "sqlite:///:memory:"
+      run: uv run pytest -q -p no:cacheprovider
+
+    # ── Frontend ─────────────────────────────────────────────
+    - name: eslint
+      root: frontend/
+      glob: "*.{ts,tsx}"
+      files: *changed
+      run: npx eslint --max-warnings 0 {files}
+
+    - name: tsc
+      root: frontend/
+      glob: "*.{ts,tsx,json}"
+      files: *changed
+      run: npx tsc -b

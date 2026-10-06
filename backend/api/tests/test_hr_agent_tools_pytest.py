@@ -13,7 +13,6 @@ from api.agent.operations import (
 )
 from api.models import Attendance, Contract, LeaveRequest, Order, PayrollEntry, StockMovement, Ticket, User
 
-
 pytestmark = pytest.mark.django_db
 
 
@@ -32,13 +31,37 @@ def test_get_attendance_trend_calculates_pct_and_flags_departments_below_85():
     sales_employee = baker.make(User, role=User.Role.SALES, department=sales_dept)
     hr_employee = baker.make(User, role=User.Role.HR, department=hr_dept)
 
-    baker.make(Attendance, employee=sales_employee, date=week_start + datetime.timedelta(days=0), status=Attendance.Status.PRESENT)
-    baker.make(Attendance, employee=sales_employee, date=week_start + datetime.timedelta(days=1), status=Attendance.Status.REMOTE)
-    baker.make(Attendance, employee=sales_employee, date=week_start + datetime.timedelta(days=2), status=Attendance.Status.ABSENT)
-    baker.make(Attendance, employee=sales_employee, date=week_start + datetime.timedelta(days=3), status=Attendance.Status.ABSENT)
+    baker.make(
+        Attendance,
+        employee=sales_employee,
+        date=week_start + datetime.timedelta(days=0),
+        status=Attendance.Status.PRESENT,
+    )
+    baker.make(
+        Attendance,
+        employee=sales_employee,
+        date=week_start + datetime.timedelta(days=1),
+        status=Attendance.Status.REMOTE,
+    )
+    baker.make(
+        Attendance,
+        employee=sales_employee,
+        date=week_start + datetime.timedelta(days=2),
+        status=Attendance.Status.ABSENT,
+    )
+    baker.make(
+        Attendance,
+        employee=sales_employee,
+        date=week_start + datetime.timedelta(days=3),
+        status=Attendance.Status.ABSENT,
+    )
 
-    baker.make(Attendance, employee=hr_employee, date=week_start + datetime.timedelta(days=0), status=Attendance.Status.PRESENT)
-    baker.make(Attendance, employee=hr_employee, date=week_start + datetime.timedelta(days=1), status=Attendance.Status.PRESENT)
+    baker.make(
+        Attendance, employee=hr_employee, date=week_start + datetime.timedelta(days=0), status=Attendance.Status.PRESENT
+    )
+    baker.make(
+        Attendance, employee=hr_employee, date=week_start + datetime.timedelta(days=1), status=Attendance.Status.PRESENT
+    )
 
     trend = get_attendance_trend(user=hr_user, weeks=4)
 
@@ -60,12 +83,31 @@ def test_get_attendance_trend_marks_employee_with_3_absences_in_4_weeks():
     employee = baker.make(User, role=User.Role.HR, department=hr_dept, first_name='Ana', last_name='Pop')
 
     baker.make(Attendance, employee=employee, date=current_week_start, status=Attendance.Status.ABSENT)
-    baker.make(Attendance, employee=employee, date=current_week_start - datetime.timedelta(days=7), status=Attendance.Status.ABSENT)
-    baker.make(Attendance, employee=employee, date=current_week_start - datetime.timedelta(days=14), status=Attendance.Status.ABSENT)
-    baker.make(Attendance, employee=employee, date=current_week_start + datetime.timedelta(days=1), status=Attendance.Status.PRESENT)
+    baker.make(
+        Attendance,
+        employee=employee,
+        date=current_week_start - datetime.timedelta(days=7),
+        status=Attendance.Status.ABSENT,
+    )
+    baker.make(
+        Attendance,
+        employee=employee,
+        date=current_week_start - datetime.timedelta(days=14),
+        status=Attendance.Status.ABSENT,
+    )
+    baker.make(
+        Attendance,
+        employee=employee,
+        date=current_week_start + datetime.timedelta(days=1),
+        status=Attendance.Status.PRESENT,
+    )
 
     trend = get_attendance_trend(user=hr_user, weeks=4)
-    current_row = next(item for item in trend if item['department'] == 'Human Resources' and item['week'] == current_week_start.isoformat())
+    current_row = next(
+        item
+        for item in trend
+        if item['department'] == 'Human Resources' and item['week'] == current_week_start.isoformat()
+    )
     flagged_absence = next(item for item in current_row['employees_absent'] if item['absence_type'] == 'unexcused')
 
     assert flagged_absence['name'] == 'Ana Pop'
@@ -136,8 +178,20 @@ def test_get_payroll_anomalies_flags_bonus_over_2x_average():
     hr_user = baker.make(User, role=User.Role.HR)
     employee = baker.make(User, role=User.Role.SALES, first_name='Andrei', last_name='Marin')
 
-    baker.make(PayrollEntry, employee=employee, month=month_start - datetime.timedelta(days=30), gross_salary_ron='1100.00', net_salary_ron='1000.00')
-    baker.make(PayrollEntry, employee=employee, month=month_start - datetime.timedelta(days=60), gross_salary_ron='1100.00', net_salary_ron='1000.00')
+    baker.make(
+        PayrollEntry,
+        employee=employee,
+        month=month_start - datetime.timedelta(days=30),
+        gross_salary_ron='1100.00',
+        net_salary_ron='1000.00',
+    )
+    baker.make(
+        PayrollEntry,
+        employee=employee,
+        month=month_start - datetime.timedelta(days=60),
+        gross_salary_ron='1100.00',
+        net_salary_ron='1000.00',
+    )
     baker.make(PayrollEntry, employee=employee, month=month_start, gross_salary_ron='1300.00', net_salary_ron='1000.00')
 
     anomalies = get_payroll_anomalies(user=hr_user)
@@ -151,13 +205,18 @@ def test_get_payroll_anomalies_flags_employee_missing_from_current_month():
 
     hr_user = baker.make(User, role=User.Role.HR)
     present_employee = baker.make(User, role=User.Role.HR, first_name='Present', last_name='Employee')
-    missing_employee = baker.make(User, role=User.Role.HR, first_name='Missing', last_name='Employee')
+    baker.make(User, role=User.Role.HR, first_name='Missing', last_name='Employee')
 
-    baker.make(PayrollEntry, employee=present_employee, month=month_start, gross_salary_ron='3000.00', net_salary_ron='2500.00')
+    baker.make(
+        PayrollEntry, employee=present_employee, month=month_start, gross_salary_ron='3000.00', net_salary_ron='2500.00'
+    )
 
     anomalies = get_payroll_anomalies(user=hr_user)
 
-    assert any(item['anomaly_type'] == 'missing_payroll_entry' and item['employee_name'] == 'Missing Employee' for item in anomalies)
+    assert any(
+        item['anomaly_type'] == 'missing_payroll_entry' and item['employee_name'] == 'Missing Employee'
+        for item in anomalies
+    )
 
 
 def test_get_payroll_anomalies_does_not_flag_bonus_within_20_percent_of_average():
@@ -167,13 +226,27 @@ def test_get_payroll_anomalies_does_not_flag_bonus_within_20_percent_of_average(
     hr_user = baker.make(User, role=User.Role.HR)
     employee = baker.make(User, role=User.Role.SALES, first_name='Calm', last_name='Bonus')
 
-    baker.make(PayrollEntry, employee=employee, month=month_start - datetime.timedelta(days=30), gross_salary_ron='1100.00', net_salary_ron='1000.00')
-    baker.make(PayrollEntry, employee=employee, month=month_start - datetime.timedelta(days=60), gross_salary_ron='1100.00', net_salary_ron='1000.00')
+    baker.make(
+        PayrollEntry,
+        employee=employee,
+        month=month_start - datetime.timedelta(days=30),
+        gross_salary_ron='1100.00',
+        net_salary_ron='1000.00',
+    )
+    baker.make(
+        PayrollEntry,
+        employee=employee,
+        month=month_start - datetime.timedelta(days=60),
+        gross_salary_ron='1100.00',
+        net_salary_ron='1000.00',
+    )
     baker.make(PayrollEntry, employee=employee, month=month_start, gross_salary_ron='1115.00', net_salary_ron='1000.00')
 
     anomalies = get_payroll_anomalies(user=hr_user)
 
-    assert not any(item['anomaly_type'] == 'bonus_spike' and item['employee_name'] == 'Calm Bonus' for item in anomalies)
+    assert not any(
+        item['anomaly_type'] == 'bonus_spike' and item['employee_name'] == 'Calm Bonus' for item in anomalies
+    )
 
 
 def test_get_leave_patterns_detects_monday_friday_pattern_after_3_occurrences():
@@ -187,9 +260,30 @@ def test_get_leave_patterns_detects_monday_friday_pattern_after_3_occurrences():
     friday = monday + datetime.timedelta(days=4)
     previous_friday = friday - datetime.timedelta(days=7)
 
-    req1 = baker.make(LeaveRequest, employee=employee, department=dept, type=LeaveRequest.Type.VACATION, from_date=monday, to_date=monday)
-    req2 = baker.make(LeaveRequest, employee=employee, department=dept, type=LeaveRequest.Type.VACATION, from_date=friday, to_date=friday)
-    req3 = baker.make(LeaveRequest, employee=employee, department=dept, type=LeaveRequest.Type.VACATION, from_date=previous_friday, to_date=previous_friday)
+    req1 = baker.make(
+        LeaveRequest,
+        employee=employee,
+        department=dept,
+        type=LeaveRequest.Type.VACATION,
+        from_date=monday,
+        to_date=monday,
+    )
+    req2 = baker.make(
+        LeaveRequest,
+        employee=employee,
+        department=dept,
+        type=LeaveRequest.Type.VACATION,
+        from_date=friday,
+        to_date=friday,
+    )
+    req3 = baker.make(
+        LeaveRequest,
+        employee=employee,
+        department=dept,
+        type=LeaveRequest.Type.VACATION,
+        from_date=previous_friday,
+        to_date=previous_friday,
+    )
 
     req1_created = timezone.make_aware(datetime.datetime.combine(monday, datetime.time(hour=9, minute=0)))
     req2_created = timezone.make_aware(datetime.datetime.combine(friday, datetime.time(hour=9, minute=0)))
@@ -244,8 +338,6 @@ def test_get_headcount_vs_workload_computes_ratio_per_department():
 
 
 def test_get_headcount_vs_workload_sets_status_when_ratio_exceeds_threshold():
-    today = timezone.localdate()
-
     hr_user = baker.make(User, role=User.Role.HR)
     baker.make(User, role=User.Role.SALES, is_active=True)
 

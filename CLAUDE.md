@@ -2,10 +2,39 @@
 
 ## Stack
 
-- **Backend**: Django 6, Django REST Framework, SimpleJWT, PostgreSQL (via `dj-database-url`)
-- **Frontend**: React + Vite, TypeScript
+- **Backend**: Python 3.13, Django 5.2, Django REST Framework, SimpleJWT, PostgreSQL (via `dj-database-url`). Dependencies are managed with **uv** (`backend/pyproject.toml` + `backend/uv.lock`)
+- **Frontend**: React + Vite, TypeScript (strict)
 - **Auth**: Cookie-based JWT (`access_token` / `refresh_token` httpOnly cookies)
 - **Infrastructure**: Docker Compose, EC2 (Ubuntu), GitHub Actions CI/CD
+
+---
+
+## Enforced checks — read before changing anything
+
+Git hooks (`lefthook.yml`) and CI (`.github/workflows/deploy.yml`) run the same checks. A change is not done until they pass:
+
+```bash
+npm --prefix frontend run check     # runs every pre-push check locally
+```
+
+| Check | Command (from `backend/` or `frontend/`) | Scope |
+|-------|-------------------------------------------|-------|
+| Python lint + format | `uv run ruff check <files>` / `uv run ruff format <files>` | changed files |
+| Python types | `uv run mypy --follow-imports=silent <files>` | changed files |
+| Migrations match models | `uv run python manage.py makemigrations --check --dry-run` | whole project |
+| Backend tests | `uv run pytest` | whole project |
+| TS lint | `npx eslint --max-warnings 0 <files>` | changed files |
+| TS types + build | `npm run build` | whole project |
+
+"Changed files" means files that differ from `origin/main`. **Any file you touch must pass lint and type checks in full**, including problems that were already there. The pre-existing backlog will be fixed after the architecture refactor, and then the linters will run on every file.
+
+### Rules for AI agents and humans
+
+- **Never weaken a check to make it pass.** Do not edit `lefthook.yml`, the CI workflow, `eslint.config.js`, `tsconfig*.json`, or the `[tool.ruff]`/`[tool.mypy]` sections of `pyproject.toml` unless the task is explicitly about tooling.
+- **Never bypass hooks** (`git commit --no-verify`, `git push --no-verify`, `LEFTHOOK=0`).
+- **No silencing without a reason.** No `any`, `@ts-ignore`, or `as unknown as`. Every `eslint-disable` must name the rule and give a reason (`// eslint-disable-next-line rule-name -- why`). Python suppressions must name the code (`# type: ignore[code]`, `# noqa: CODE`). Bare suppressions fail lint.
+- **Model change ⇒ migration in the same commit.** Run `uv run python manage.py makemigrations`. The `--check` step fails otherwise.
+- **Add dependencies with the package manager**: `uv add <pkg>` (or `uv add --dev <pkg>`) in `backend/`, `npm install <pkg>` in `frontend/`. Never hand-edit `uv.lock` or `package-lock.json`.
 
 ---
 
@@ -51,20 +80,20 @@
 
 - Use Django's `TestCase` (not plain `unittest.TestCase`) — it wraps each test in a transaction and rolls back automatically.
 - Use `APIClient` from `rest_framework.test` for endpoint tests — not the raw Django test `Client`.
-- **Never mock the database.** Tests run against a real SQLite DB (configured in CI via `DATABASE_URL=sqlite:///test.db`). Mocking the ORM hides real query bugs.
+- **Never mock the database.** Tests run against a real SQLite DB (configured in CI via `DATABASE_URL=sqlite:///:memory:`). Mocking the ORM hides real query bugs.
 - Create test users with `User.objects.create_user(...)` — never `User.objects.create(...)` (skips password hashing).
 - For authenticated endpoint tests, log in via the login endpoint and let the cookie be set, or force-authenticate with `client.force_authenticate(user=user)`.
 - Test file location: `backend/api/tests/` as a package, or `backend/api/tests.py`. One file per domain area (e.g. `test_auth.py`, `test_employees.py`, `test_departments.py`).
 - Each test method should test one behaviour. Name tests as `test_<action>_<expected_outcome>` (e.g. `test_login_with_invalid_password_returns_401`).
 - Always test both the happy path and the main failure cases (missing fields, wrong role, unauthenticated).
-- Run tests: `python manage.py test` from `backend/`.
+- Run tests: `uv run pytest` from `backend/` (uses in-memory SQLite when `DATABASE_URL=sqlite:///:memory:`, as in CI). pytest also collects plain `pytest`-style test functions, so `manage.py test` is not a substitute.
 
 ---
 
 ## Deployment
 
 - **Local dev**: `docker-compose.yaml` — includes live-reload volume mounts.
-- **Production**: `docker-compose.prod.yml` — no volume mounts; `npm install` and pip packages come from the built image.
+- **Production**: `docker-compose.prod.yml` — no volume mounts; `npm install` and Python packages (`uv sync --no-dev`, installed to `/opt/venv`) come from the built image.
 - After any model change, migrations must be run on the target environment — they are not automatic.
   - Locally: `docker exec miez-backend-1 python manage.py migrate`
   - EC2: `docker exec <backend_container_id> python manage.py migrate`

@@ -151,8 +151,30 @@ M.I.E.Z is built around five roles, each with a tailored view of the platform an
 
 ## Tech at a glance
 
-- **Backend** — Django 6 + Django REST Framework, SimpleJWT (cookie-based auth), PostgreSQL
+- **Backend** — Python 3.13, Django 5.2 + Django REST Framework, SimpleJWT (cookie-based auth), PostgreSQL
 - **Frontend** — React + Vite + TypeScript
 - **AI** — Anthropic Claude (the assistant and report/HR agents)
 - **Automation** — signal- and schedule-driven workflow engine with SMTP email
 - **Infrastructure** — Docker Compose, AWS EC2, GitHub Actions CI/CD
+
+---
+
+## Development
+
+**Prerequisites:** Docker, [uv](https://docs.astral.sh/uv/) (Python package manager), Node.js 20+.
+
+```bash
+# Run the app (Postgres, backend on :8000, frontend on :5173)
+docker compose up --build
+docker exec miez-backend-1 python manage.py migrate
+docker exec miez-backend-1 python manage.py seed_db   # demo data; every user's password is "password123"
+
+# Local tooling — also installs the git hooks
+(cd backend && uv sync)         # creates backend/.venv with Python 3.13
+(cd frontend && npm install)    # installs lefthook hooks into .git/hooks
+
+# Run every check the pre-push hook and CI run
+npm --prefix frontend run check
+```
+
+Git hooks (lefthook) format staged files on commit and run lint, type checks, the migration check and tests on push. CI runs the same checks on every pull request. See `CLAUDE.md` for the rules.

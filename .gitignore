@@ -85,3 +85,12 @@ credentials.yml.enc
 # report csv
 backend/reports/*.csv
 /build_deck.py
+# generated report output (written at runtime by report_utils)
+backend/reports/*.html
+
+# local artifacts and secrets — never commit
+*.pem
+*.sqlite3
+cookies.txt
+a.out
+FETCH_HEAD

@@ -77,7 +77,7 @@ def test_get_expiring_contracts_returns_only_contracts_within_60_days():
 
     hr_user = baker.make(User, role=User.Role.HR)
     dept = baker.make('api.Department', name='IT', slug='it')
-    employee_in_window = baker.make(User, role=User.Role.IT, department=dept)
+    employee_in_window = baker.make(User, role=User.Role.IT, department=dept, first_name='Ana', last_name='Pop')
     employee_outside_window = baker.make(User, role=User.Role.IT, department=dept)
 
     baker.make(
@@ -98,7 +98,7 @@ def test_get_expiring_contracts_returns_only_contracts_within_60_days():
     results = get_expiring_contracts(user=hr_user, days=60)
 
     assert len(results) == 1
-    assert results[0]['contract_number'] == 'CTR-IN-60'
+    assert results[0]['employee_name'] == 'Ana Pop'
 
 
 def test_get_expiring_contracts_sets_has_open_tickets_when_employee_has_non_resolved_tickets():

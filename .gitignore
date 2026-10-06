@@ -76,6 +76,7 @@ credentials.yml.enc
 *.swp
 *~
 *.lock
+!uv.lock
 *.cache
 .cache-loader
 

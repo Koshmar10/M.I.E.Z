@@ -17,22 +17,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          version: "0.12.23"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: uv sync --locked
 
       - name: Run tests
         env:
           DJANGO_SECRET_KEY: ci-secret-not-real
           DEBUG: "True"
           DATABASE_URL: "sqlite:///:memory:"
-        run: |
-          python manage.py test
+        run: uv run pytest
 
   # ── CD ────────────────────────────────────────────────────────
   deploy:

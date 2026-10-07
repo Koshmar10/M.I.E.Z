@@ -1,17 +1,27 @@
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
-from django.utils import timezone
 
-from .models import Department, User
-from .models import Asset
-from .models import Product
-from .models import Report
-from .models import Supplier, StockMovement
-from .models import Ticket, Order, OrderItem, Customer, Invoice
-from .models import SystemStatus
-from .models import ConversationSession, ConversationMessage
-from .models import Workflow, WorkflowLog
-from .models import Notification
+from .models import (
+    Asset,
+    ConversationMessage,
+    ConversationSession,
+    Customer,
+    Department,
+    Invoice,
+    Notification,
+    Order,
+    OrderItem,
+    Product,
+    Report,
+    StockMovement,
+    Supplier,
+    SystemStatus,
+    Ticket,
+    User,
+    Workflow,
+    WorkflowLog,
+)
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -253,8 +263,34 @@ class StockMovementSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StockMovement
-        fields = ['id', 'movement_type', 'product', 'product_obj', 'product_name', 'product_sku', 'supplier', 'supplier_obj', 'supplier_name', 'quantity', 'expected_date', 'notes', 'created_by', 'created_by_username', 'created_at']
-        read_only_fields = ['id', 'created_by', 'created_at', 'product_obj', 'supplier_obj', 'product_name', 'product_sku', 'supplier_name', 'created_by_username']
+        fields = [
+            'id',
+            'movement_type',
+            'product',
+            'product_obj',
+            'product_name',
+            'product_sku',
+            'supplier',
+            'supplier_obj',
+            'supplier_name',
+            'quantity',
+            'expected_date',
+            'notes',
+            'created_by',
+            'created_by_username',
+            'created_at',
+        ]
+        read_only_fields = [
+            'id',
+            'created_by',
+            'created_at',
+            'product_obj',
+            'supplier_obj',
+            'product_name',
+            'product_sku',
+            'supplier_name',
+            'created_by_username',
+        ]
 
     def validate(self, data):
         movement_type = data.get('movement_type')
@@ -263,14 +299,14 @@ class StockMovementSerializer(serializers.ModelSerializer):
 
         if movement_type in [StockMovement.Type.ADJUSTMENT, StockMovement.Type.WRITE_OFF]:
             if not notes:
-                raise serializers.ValidationError({"notes": "Notes are required for adjustments and write-offs."})
+                raise serializers.ValidationError({'notes': 'Notes are required for adjustments and write-offs.'})
 
         if movement_type == StockMovement.Type.ADJUSTMENT:
             if quantity < 0:
-                raise serializers.ValidationError({"quantity": "Quantity cannot be negative."})
+                raise serializers.ValidationError({'quantity': 'Quantity cannot be negative.'})
         else:
             if quantity <= 0:
-                raise serializers.ValidationError({"quantity": "Quantity must be greater than zero."})
+                raise serializers.ValidationError({'quantity': 'Quantity must be greater than zero.'})
 
         return data
 
@@ -590,7 +626,17 @@ class ReportSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Report
-        fields = ['id', 'name', 'slug', 'category', 'period', 'file_size_kb', 'generated_at', 'file_available', 'digest_data']
+        fields = [
+            'id',
+            'name',
+            'slug',
+            'category',
+            'period',
+            'file_size_kb',
+            'generated_at',
+            'file_available',
+            'digest_data',
+        ]
 
     def get_file_available(self, obj):
         return bool(obj.file_path)
@@ -605,12 +651,14 @@ class SystemStatusSerializer(serializers.ModelSerializer):
 
 class ChatMessageHistorySerializer(serializers.Serializer):
     """Serializer for a single message in conversation history."""
+
     role = serializers.ChoiceField(choices=['user', 'assistant'])
     content = serializers.CharField()
 
 
 class AssistantChatRequestSerializer(serializers.Serializer):
     """Serializer for the assistant chat endpoint request."""
+
     message = serializers.CharField(required=True)
     history = ChatMessageHistorySerializer(many=True, required=False, allow_empty=True)
     current_page = serializers.CharField(required=False, allow_blank=True, default='')
@@ -625,12 +673,14 @@ class AssistantChatRequestSerializer(serializers.Serializer):
 
 class ToolCallSerializer(serializers.Serializer):
     """Serializer for tool calls made by the agent."""
+
     tool_name = serializers.CharField()
     arguments = serializers.JSONField()
 
 
 class AssistantChatResponseSerializer(serializers.Serializer):
     """Serializer for the assistant chat endpoint response."""
+
     response = serializers.CharField()
     tool_calls_made = ToolCallSerializer(many=True, allow_empty=True)
 
@@ -672,9 +722,17 @@ class WorkflowSerializer(serializers.ModelSerializer):
     class Meta:
         model = Workflow
         fields = [
-            'id', 'name', 'trigger_type', 'trigger_label', 'trigger_config',
-            'actions', 'action_labels', 'is_active', 'last_triggered_at',
-            'created_at', 'updated_at',
+            'id',
+            'name',
+            'trigger_type',
+            'trigger_label',
+            'trigger_config',
+            'actions',
+            'action_labels',
+            'is_active',
+            'last_triggered_at',
+            'created_at',
+            'updated_at',
         ]
         read_only_fields = ['id', 'last_triggered_at', 'created_at', 'updated_at']
 
@@ -684,7 +742,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
     def get_action_labels(self, obj):
         label_map = dict(Workflow.ActionType.choices)
         result = []
-        for a in (obj.actions or []):
+        for a in obj.actions or []:
             if isinstance(a, str):
                 result.append(label_map.get(a, a))
             elif isinstance(a, dict):

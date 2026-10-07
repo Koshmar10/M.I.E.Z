@@ -1,41 +1,73 @@
-from datetime import timedelta, datetime, date
 from collections import OrderedDict
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-
-from django.http import FileResponse, JsonResponse
-from django.views.decorators.http import require_GET
-from django.shortcuts import get_object_or_404
-from django.db.models import F, Avg, Count, Q, DurationField, ExpressionWrapper, Sum, Value, DecimalField, Case, When, IntegerField
-from django.db.models.functions import TruncDay, TruncWeek, TruncMonth, Coalesce
-from django.utils import timezone
-from django.core.cache import cache
 
 from django.conf import settings
 from django.contrib.auth import update_session_auth_hash
-from rest_framework.views import APIView
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateAPIView
-from rest_framework.response import Response
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.pagination import PageNumberPagination
-from rest_framework.exceptions import PermissionDenied
+from django.core.cache import cache
+from django.db.models import (
+    Avg,
+    Case,
+    Count,
+    DecimalField,
+    DurationField,
+    ExpressionWrapper,
+    F,
+    IntegerField,
+    Q,
+    Sum,
+    Value,
+    When,
+)
+from django.db.models.functions import Coalesce, TruncDay, TruncMonth, TruncWeek
+from django.http import FileResponse, JsonResponse
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.views.decorators.http import require_GET
 from django_filters import rest_framework as filters
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.generics import ListCreateAPIView, RetrieveUpdateAPIView
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .models import (
-    Department, Report, Supplier, User, Product, StockMovement, Ticket, Asset,
-    Order, OrderItem, Customer, Invoice, LeaveRequest, Attendance, Contract,
-    PayrollEntry, SystemStatus, Notification, ConversationSession, ConversationMessage,
-    Workflow, WorkflowLog,
-)
+from .agent import AgentRunner, get_registry
 from .management.commands.generate_hr_digest import DigestGenerator
+from .models import (
+    Asset,
+    Attendance,
+    Contract,
+    ConversationMessage,
+    ConversationSession,
+    Customer,
+    Department,
+    Invoice,
+    LeaveRequest,
+    Notification,
+    Order,
+    OrderItem,
+    PayrollEntry,
+    Product,
+    Report,
+    StockMovement,
+    Supplier,
+    SystemStatus,
+    Ticket,
+    User,
+    Workflow,
+    WorkflowLog,
+)
+from .notifications import notify_role
 from .serializers import (
+    AssetSerializer,
     AssistantChatRequestSerializer,
     AssistantChatResponseSerializer,
-    AssetSerializer,
-    ConversationSessionSerializer,
     ConversationSessionListSerializer,
+    ConversationSessionSerializer,
     CustomerDetailSerializer,
     CustomerSalesSummarySerializer,
     DepartmentSerializer,
@@ -44,26 +76,23 @@ from .serializers import (
     EmployeeUpdateSerializer,
     InvoiceDetailSerializer,
     InvoiceListSerializer,
+    NotificationSerializer,
     OrderCreateSerializer,
     OrderDetailSerializer,
     OrderListSerializer,
     ProductSerializer,
     ReportSerializer,
     SalesProductSerializer,
-    SupplierSerializer,
     StockMovementSerializer,
+    SupplierSerializer,
     SystemStatusSerializer,
     TicketCreateSerializer,
     TicketSerializer,
     TicketUpdateSerializer,
+    WorkflowLogSerializer,
     WorkflowSerializer,
     WorkflowWriteSerializer,
-    WorkflowLogSerializer,
-    NotificationSerializer,
 )
-from .notifications import notify, notify_role
-from .agent import AgentRunner, get_registry
-
 
 IT_SLA_THRESHOLD_HOURS = 48
 
@@ -83,11 +112,7 @@ def _allowed_report_categories(user):
     """Return the set of report categories the user is permitted to read."""
     if user.role == User.Role.CEO:
         return set(Report.Category.values)
-    return {
-        category
-        for category, roles in REPORT_CATEGORY_ROLES.items()
-        if user.role in roles
-    }
+    return {category for category, roles in REPORT_CATEGORY_ROLES.items() if user.role in roles}
 
 
 def _can_access_report(user, report):
@@ -100,60 +125,58 @@ def _can_access_report(user, report):
 @require_GET
 def is_even(request):
     try:
-        number = int(request.GET.get("number"))
+        number = int(request.GET.get('number'))
         result = number % 2 == 0
-        return JsonResponse({"even": result})
+        return JsonResponse({'even': result})
     except (TypeError, ValueError):
-        return JsonResponse(
-            {"error": "Invalid or missing number parameter"}, status=400
-        )
+        return JsonResponse({'error': 'Invalid or missing number parameter'}, status=400)
 
 
 class LoginView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
         if response.status_code == 200:
-            acces_token = response.data.get("access")
-            refresh_token = response.data.get("refresh")
+            acces_token = response.data.get('access')
+            refresh_token = response.data.get('refresh')
 
             response.set_cookie(
-                key=settings.SIMPLE_JWT["AUTH_COOKIE"],
+                key=settings.SIMPLE_JWT['AUTH_COOKIE'],
                 value=acces_token,
                 httponly=True,
-                secure=settings.SIMPLE_JWT["AUTH_COOKIE_SECURE"],
-                samesite="Lax",
-                path="/",
+                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+                samesite='Lax',
+                path='/',
             )
             response.set_cookie(
-                key=settings.SIMPLE_JWT["AUTH_COOKIE_REFRESH"],
+                key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
                 value=refresh_token,
                 httponly=True,
-                secure=settings.SIMPLE_JWT["AUTH_COOKIE_SECURE"],
-                samesite="Lax",
-                path="/api/auth/refresh/",
+                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+                samesite='Lax',
+                path='/api/auth/refresh/',
             )
         return response
 
 
 class RefreshTokenView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
-        refresh = request.COOKIES.get(settings.SIMPLE_JWT["AUTH_COOKIE_REFRESH"])
+        refresh = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
         if refresh:
-            request.data["refresh"] = refresh
+            request.data['refresh'] = refresh
 
         response = super().post(request, *args, **kwargs)
 
         if response.status_code == 200:
-            access_token = response.data.get("access")
+            access_token = response.data.get('access')
             response.set_cookie(
-                key=settings.SIMPLE_JWT["AUTH_COOKIE"],
+                key=settings.SIMPLE_JWT['AUTH_COOKIE'],
                 value=access_token,
                 httponly=True,
-                secure=settings.SIMPLE_JWT["AUTH_COOKIE_SECURE"],
-                samesite="Lax",
-                path="/",
+                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+                samesite='Lax',
+                path='/',
             )
-            response.data = {"detail": "Refresh success"}
+            response.data = {'detail': 'Refresh success'}
         return response
 
 
@@ -163,15 +186,15 @@ from rest_framework_simplejwt.tokens import RefreshToken
 class LogoutView(APIView):
     def post(self, request):
         try:
-            refresh_token = request.COOKIES.get(settings.SIMPLE_JWT["AUTH_COOKIE_REFRESH"])
+            refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
             token = RefreshToken(refresh_token)
             token.blacklist()
         except Exception:
             pass
-        
-        response = Response({"detail": "Logout successful"}, status=status.HTTP_200_OK)
-        response.delete_cookie(settings.SIMPLE_JWT["AUTH_COOKIE"])
-        response.delete_cookie(settings.SIMPLE_JWT["AUTH_COOKIE_REFRESH"])
+
+        response = Response({'detail': 'Logout successful'}, status=status.HTTP_200_OK)
+        response.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE'])
+        response.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
         return response
 
 
@@ -181,11 +204,11 @@ class UserMeView(APIView):
     def get(self, request):
         return Response(
             {
-                "id": request.user.id,
-                "username": request.user.username,
-                "email": request.user.email,
-                "role": request.user.role,
-                "message": "Authenticated",
+                'id': request.user.id,
+                'username': request.user.username,
+                'email': request.user.email,
+                'role': request.user.role,
+                'message': 'Authenticated',
             }
         )
 
@@ -200,18 +223,19 @@ class UserMeView(APIView):
             user.phone = data['phone']
         if 'address' in data:
             user.address = data['address']
-        
+
         user.save(update_fields=['first_name', 'last_name', 'phone', 'address'])
         return JsonResponse(
             {
-                "id": user.id,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "phone": user.phone,
-                "address": user.address,
-                "detail": "Profile updated successfully."
+                'id': user.id,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'phone': user.phone,
+                'address': user.address,
+                'detail': 'Profile updated successfully.',
             }
         )
+
 
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]
@@ -222,11 +246,13 @@ class ChangePasswordView(APIView):
         new_password = request.data.get('new_password')
 
         if not current_password or not new_password:
-            return Response({'detail': 'Both current and new passwords are required.'}, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(
+                {'detail': 'Both current and new passwords are required.'}, status=status.HTTP_400_BAD_REQUEST
+            )
+
         if not user.check_password(current_password):
             return Response({'detail': 'Incorrect current password.'}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         user.set_password(new_password)
         user.save()
         update_session_auth_hash(request, user)  # Keeps the user logged in
@@ -238,7 +264,7 @@ class DepartmentListCreateView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view departments."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view departments.'}, status=status.HTTP_403_FORBIDDEN)
 
         departments = Department.objects.all()
         serializer = DepartmentSerializer(departments, many=True)
@@ -246,7 +272,7 @@ class DepartmentListCreateView(APIView):
 
     def post(self, request):
         if request.user.role != User.Role.CEO:
-            return Response({"detail": "Only CEOs can create departments."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEOs can create departments.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = DepartmentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -256,6 +282,7 @@ class DepartmentListCreateView(APIView):
 
 class InventoryFlowView(APIView):
     """Return nodes and links for a Sankey flow diagram of stock movements."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -285,6 +312,7 @@ class InventoryFlowView(APIView):
         wh_idx = get_node('warehouse', 'Main Warehouse')
 
         from collections import defaultdict
+
         inbound_agg = defaultdict(int)
         outbound_agg = defaultdict(int)
 
@@ -292,9 +320,9 @@ class InventoryFlowView(APIView):
             val = int(m.quantity or 0)
             if val <= 0:
                 continue
-                
+
             prod = m.product.name if m.product else 'Unknown Product'
-            
+
             if m.movement_type == StockMovement.Type.INBOUND:
                 sup = m.supplier.name if m.supplier else 'Unknown Supplier'
                 inbound_agg[(sup, prod)] += val
@@ -309,21 +337,25 @@ class InventoryFlowView(APIView):
         for (sup, prod), val in inbound_agg.items():
             s_idx = get_node('supplier', sup)
             p_idx = get_node('product', prod)
-            links.append({'source': s_idx, 'target': p_idx, 'value': val, 'items': f"{prod} × {val}", 'product_name': prod})
-            links.append({'source': p_idx, 'target': wh_idx, 'value': val, 'items': "Processing..."})
+            links.append(
+                {'source': s_idx, 'target': p_idx, 'value': val, 'items': f'{prod} × {val}', 'product_name': prod}
+            )
+            links.append({'source': p_idx, 'target': wh_idx, 'value': val, 'items': 'Processing...'})
 
         for (prod, dest), val in outbound_agg.items():
             d_idx = get_node('out', dest)
-            links.append({'source': wh_idx, 'target': d_idx, 'value': val, 'items': f"{prod} × {val}", 'product_name': prod})
+            links.append(
+                {'source': wh_idx, 'target': d_idx, 'value': val, 'items': f'{prod} × {val}', 'product_name': prod}
+            )
 
-        return Response({
-            'nodes': nodes,
-            'links': links,
-            'date_range': {
-                'start': start_date.date().isoformat(),
-                'end': end_date.date().isoformat()
-            }
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                'nodes': nodes,
+                'links': links,
+                'date_range': {'start': start_date.date().isoformat(), 'end': end_date.date().isoformat()},
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class DepartmentDeleteView(APIView):
@@ -331,7 +363,7 @@ class DepartmentDeleteView(APIView):
 
     def delete(self, request, id):
         if request.user.role != User.Role.CEO:
-            return Response({"detail": "Only CEOs can remove departments."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEOs can remove departments.'}, status=status.HTTP_403_FORBIDDEN)
 
         department = get_object_or_404(Department, id=id)
         department.delete()
@@ -349,16 +381,14 @@ class EmployeeListView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR, User.Role.IT]:
-            return Response({"detail": "Only CEO, HR, and IT can view employees."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO, HR, and IT can view employees.'}, status=status.HTTP_403_FORBIDDEN)
 
         queryset = User.objects.select_related('department').all().order_by('id')
 
         search = request.query_params.get('search', '').strip()
         if search:
             queryset = queryset.filter(
-                Q(first_name__icontains=search)
-                | Q(last_name__icontains=search)
-                | Q(username__icontains=search)
+                Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(username__icontains=search)
             )
 
         department_filter = request.query_params.get('department')
@@ -383,7 +413,7 @@ class EmployeeListView(APIView):
 
     def post(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can create employees."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can create employees.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = EmployeeCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -397,7 +427,7 @@ class AssetListCreateView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({"detail": "Only IT and CEO can view assets."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only IT and CEO can view assets.'}, status=status.HTTP_403_FORBIDDEN)
 
         assets = Asset.objects.select_related('assigned_to').all().order_by('-created_at')
         serializer = AssetSerializer(assets, many=True)
@@ -405,7 +435,7 @@ class AssetListCreateView(APIView):
 
     def post(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({"detail": "Only IT and CEO can create assets."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only IT and CEO can create assets.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = AssetSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -418,7 +448,7 @@ class AssetDetailView(APIView):
 
     def get(self, request, id):
         if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({"detail": "Only IT and CEO can view assets."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only IT and CEO can view assets.'}, status=status.HTTP_403_FORBIDDEN)
 
         asset = get_object_or_404(Asset.objects.select_related('assigned_to'), id=id)
         serializer = AssetSerializer(asset)
@@ -426,7 +456,7 @@ class AssetDetailView(APIView):
 
     def patch(self, request, id):
         if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({"detail": "Only IT and CEO can update assets."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only IT and CEO can update assets.'}, status=status.HTTP_403_FORBIDDEN)
 
         asset = get_object_or_404(Asset.objects.select_related('assigned_to'), id=id)
         serializer = AssetSerializer(asset, data=request.data, partial=True)
@@ -436,7 +466,7 @@ class AssetDetailView(APIView):
 
     def delete(self, request, id):
         if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({"detail": "Only IT and CEO can delete assets."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only IT and CEO can delete assets.'}, status=status.HTTP_403_FORBIDDEN)
 
         asset = get_object_or_404(Asset, id=id)
         asset.delete()
@@ -448,7 +478,7 @@ class EmployeeDetailView(APIView):
 
     def get(self, request, id):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view employee details."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view employee details.'}, status=status.HTTP_403_FORBIDDEN)
 
         employee = get_object_or_404(User.objects.select_related('department'), id=id)
         serializer = EmployeeListSerializer(employee)
@@ -456,7 +486,9 @@ class EmployeeDetailView(APIView):
 
     def patch(self, request, id):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can update employee details."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Only CEO and HR can update employee details.'}, status=status.HTTP_403_FORBIDDEN
+            )
 
         employee = get_object_or_404(User.objects.select_related('department'), id=id)
         serializer = EmployeeUpdateSerializer(employee, data=request.data, partial=True)
@@ -470,7 +502,7 @@ class EmployeeStatsView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view employee stats."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view employee stats.'}, status=status.HTTP_403_FORBIDDEN)
 
         base = User.objects.select_related('department').all()
 
@@ -480,18 +512,16 @@ class EmployeeStatsView(APIView):
             full_time=Count('id', filter=Q(full_time=True)),
         )
 
-        department_rows = (
-            base.values('department__name')
-            .annotate(count=Count('id'))
-            .order_by('department__name')
-        )
+        department_rows = base.values('department__name').annotate(count=Count('id')).order_by('department__name')
 
         departments = []
         for row in department_rows:
-            departments.append({
-                'name': row['department__name'] or 'Unassigned',
-                'count': row['count'],
-            })
+            departments.append(
+                {
+                    'name': row['department__name'] or 'Unassigned',
+                    'count': row['count'],
+                }
+            )
 
         return Response(
             {
@@ -509,7 +539,7 @@ class HrDashboardView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view HR dashboard KPIs."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view HR dashboard KPIs.'}, status=status.HTTP_403_FORBIDDEN)
 
         today = timezone.localdate()
         month_start = today.replace(day=1)
@@ -540,7 +570,18 @@ class HrDashboardView(APIView):
                 'non_full_time_employees': non_full_time,
                 'retention_rate': retention_rate,
                 'active_employees': active_employees,
-                'latest_digest': (lambda: (lambda r: {'report_id': r.id, 'summary': (r.digest_data.get('summary_line') if r.digest_data else None)} if r else None)(Report.objects.filter(category=Report.Category.HR).order_by('-generated_at').first()))(),
+                'latest_digest': (
+                    lambda: (
+                        lambda r: (
+                            {
+                                'report_id': r.id,
+                                'summary': (r.digest_data.get('summary_line') if r.digest_data else None),
+                            }
+                            if r
+                            else None
+                        )
+                    )(Report.objects.filter(category=Report.Category.HR).order_by('-generated_at').first())
+                )(),
             },
             status=status.HTTP_200_OK,
         )
@@ -558,7 +599,7 @@ class CeoHrSummaryView(APIView):
 
     def get(self, request):
         if request.user.role != User.Role.CEO:
-            return Response({"detail": "Only CEO can view HR summary."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO can view HR summary.'}, status=status.HTTP_403_FORBIDDEN)
 
         today = timezone.localdate()
 
@@ -570,9 +611,7 @@ class CeoHrSummaryView(APIView):
 
         leave_by_department = {
             row['department_id']: row['count']
-            for row in (
-                current_leaves.values('department_id').annotate(count=Count('id'))
-            )
+            for row in (current_leaves.values('department_id').annotate(count=Count('id')))
         }
 
         department_headcount = []
@@ -666,7 +705,11 @@ class CeoHrSummaryView(APIView):
             report = Report.objects.filter(category=Report.Category.HR).order_by('-generated_at').first()
             if not report or not report.digest_data:
                 return None
-            summary = report.digest_data.get('summary_line') or report.digest_data.get('summary') or report.digest_data.get('period')
+            summary = (
+                report.digest_data.get('summary_line')
+                or report.digest_data.get('summary')
+                or report.digest_data.get('period')
+            )
             return {'report_id': report.id, 'summary': summary}
         except Exception:
             return None
@@ -686,7 +729,7 @@ class HrUpcomingEventsView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view upcoming events."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view upcoming events.'}, status=status.HTTP_403_FORBIDDEN)
 
         today = timezone.localdate()
         horizon_days = max(7, min(int(request.query_params.get('days', 30) or 30), 90))
@@ -702,7 +745,9 @@ class HrUpcomingEventsView(APIView):
         for contract in upcoming_contracts:
             event_date = contract.end_date
             days_until = self._days_until(today, event_date)
-            employee_name = (f'{contract.employee.first_name} {contract.employee.last_name}'.strip() or contract.employee.username)
+            employee_name = (
+                f'{contract.employee.first_name} {contract.employee.last_name}'.strip() or contract.employee.username
+            )
             events.append(
                 {
                     'id': f'contract-{contract.id}',
@@ -725,7 +770,7 @@ class HrUpcomingEventsView(APIView):
         for employee in upcoming_new_hires:
             event_date = employee.start_date
             days_until = self._days_until(today, event_date)
-            full_name = (f'{employee.first_name} {employee.last_name}'.strip() or employee.username)
+            full_name = f'{employee.first_name} {employee.last_name}'.strip() or employee.username
             department = employee.department.name if employee.department else 'No department'
             events.append(
                 {
@@ -786,7 +831,7 @@ class HrAttendanceView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view attendance."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view attendance.'}, status=status.HTTP_403_FORBIDDEN)
 
         week_raw = request.query_params.get('week')
         today = timezone.localdate()
@@ -799,7 +844,10 @@ class HrAttendanceView(APIView):
                 try:
                     parsed_week_start = datetime.strptime(f'{week_raw}-1', '%G-W%V-%u').date()
                 except ValueError:
-                    return Response({'detail': 'Invalid week format. Use YYYY-MM-DD or YYYY-Www.'}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {'detail': 'Invalid week format. Use YYYY-MM-DD or YYYY-Www.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
             week_start = parsed_week_start - timedelta(days=parsed_week_start.weekday())
         else:
@@ -817,7 +865,7 @@ class HrAttendanceView(APIView):
             statuses = {}
             for day in days:
                 day_key = day.isoformat()
-                statuses[day_key] = by_key.get((employee.id, day_key), None)
+                statuses[day_key] = by_key.get((employee.id, day_key))
 
             full_name = f'{employee.first_name} {employee.last_name}'.strip() or employee.username
             employee_grid.append(
@@ -845,7 +893,7 @@ class LeaveRequestListCreateView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view leave requests."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view leave requests.'}, status=status.HTTP_403_FORBIDDEN)
 
         status_filter = (request.query_params.get('status') or '').strip().upper()
 
@@ -860,7 +908,10 @@ class LeaveRequestListCreateView(APIView):
 
         rows = []
         for leave_request in leave_requests:
-            employee_name = f'{leave_request.employee.first_name} {leave_request.employee.last_name}'.strip() or leave_request.employee.username
+            employee_name = (
+                f'{leave_request.employee.first_name} {leave_request.employee.last_name}'.strip()
+                or leave_request.employee.username
+            )
             department = leave_request.department or leave_request.employee.department
             days = (leave_request.to_date - leave_request.from_date).days + 1
 
@@ -889,7 +940,8 @@ class LeaveRequestListCreateView(APIView):
                     if leave_request.approved_by is None
                     else {
                         'id': leave_request.approved_by_id,
-                        'name': f'{leave_request.approved_by.first_name} {leave_request.approved_by.last_name}'.strip() or leave_request.approved_by.username,
+                        'name': f'{leave_request.approved_by.first_name} {leave_request.approved_by.last_name}'.strip()
+                        or leave_request.approved_by.username,
                         'username': leave_request.approved_by.username,
                     },
                     'created_at': leave_request.created_at.isoformat(),
@@ -900,7 +952,7 @@ class LeaveRequestListCreateView(APIView):
 
     def post(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can create leave requests."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can create leave requests.'}, status=status.HTTP_403_FORBIDDEN)
 
         employee_id = request.data.get('employee')
         leave_type = request.data.get('type', LeaveRequest.Type.VACATION)
@@ -909,7 +961,9 @@ class LeaveRequestListCreateView(APIView):
         reason = request.data.get('reason', '')
 
         if not employee_id or not from_date_raw or not to_date_raw:
-            return Response({'detail': 'employee, from_date and to_date are required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': 'employee, from_date and to_date are required.'}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         employee = get_object_or_404(User.objects.select_related('department'), id=employee_id)
 
@@ -947,7 +1001,7 @@ class LeaveRequestApproveView(APIView):
 
     def patch(self, request, id):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can approve leave requests."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can approve leave requests.'}, status=status.HTTP_403_FORBIDDEN)
 
         leave_request = get_object_or_404(LeaveRequest, id=id)
         leave_request.status = LeaveRequest.Status.APPROVED
@@ -962,7 +1016,7 @@ class LeaveRequestRejectView(APIView):
 
     def patch(self, request, id):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can reject leave requests."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can reject leave requests.'}, status=status.HTTP_403_FORBIDDEN)
 
         leave_request = get_object_or_404(LeaveRequest, id=id)
         leave_request.status = LeaveRequest.Status.REJECTED
@@ -991,7 +1045,9 @@ class ContractListView(APIView):
             'id': contract.id,
             'contract_number': contract.contract_number,
             'employee': contract.employee_id,
-            'employee_name': (f'{contract.employee.first_name} {contract.employee.last_name}'.strip() or contract.employee.username),
+            'employee_name': (
+                f'{contract.employee.first_name} {contract.employee.last_name}'.strip() or contract.employee.username
+            ),
             'department': contract.department.name if contract.department else None,
             'type': contract.type,
             'start_date': contract.start_date.isoformat(),
@@ -1002,7 +1058,7 @@ class ContractListView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view contracts."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view contracts.'}, status=status.HTTP_403_FORBIDDEN)
 
         status_filter = (request.query_params.get('status') or '').strip().lower()
         today = timezone.localdate()
@@ -1025,7 +1081,7 @@ class ContractDetailView(APIView):
 
     def get(self, request, id):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view contract details."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view contract details.'}, status=status.HTTP_403_FORBIDDEN)
 
         today = timezone.localdate()
         contract = get_object_or_404(Contract.objects.select_related('employee', 'department'), id=id)
@@ -1033,7 +1089,7 @@ class ContractDetailView(APIView):
 
     def patch(self, request, id):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can edit contracts."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can edit contracts.'}, status=status.HTTP_403_FORBIDDEN)
 
         contract = get_object_or_404(Contract.objects.select_related('employee', 'department'), id=id)
         update_fields = []
@@ -1041,7 +1097,7 @@ class ContractDetailView(APIView):
         if 'type' in request.data:
             type_value = (request.data.get('type') or '').strip().upper()
             if type_value not in Contract.Type.values:
-                return Response({"detail": "Invalid contract type."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'detail': 'Invalid contract type.'}, status=status.HTTP_400_BAD_REQUEST)
             contract.type = type_value
             update_fields.append('type')
 
@@ -1049,7 +1105,7 @@ class ContractDetailView(APIView):
             try:
                 contract.start_date = date.fromisoformat(request.data['start_date'])
             except (ValueError, TypeError):
-                return Response({"detail": "Invalid start_date. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'detail': 'Invalid start_date. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
             update_fields.append('start_date')
 
         if 'end_date' in request.data:
@@ -1060,16 +1116,18 @@ class ContractDetailView(APIView):
                 try:
                     contract.end_date = date.fromisoformat(end_raw)
                 except (ValueError, TypeError):
-                    return Response({"detail": "Invalid end_date. Use YYYY-MM-DD or null."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {'detail': 'Invalid end_date. Use YYYY-MM-DD or null.'}, status=status.HTTP_400_BAD_REQUEST
+                    )
             update_fields.append('end_date')
 
         if 'salary_ron' in request.data:
             try:
                 salary = Decimal(str(request.data.get('salary_ron')))
             except (InvalidOperation, TypeError):
-                return Response({"detail": "salary_ron must be a number."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'detail': 'salary_ron must be a number.'}, status=status.HTTP_400_BAD_REQUEST)
             if salary < 0:
-                return Response({"detail": "salary_ron cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'detail': 'salary_ron cannot be negative.'}, status=status.HTTP_400_BAD_REQUEST)
             contract.salary_ron = salary
             update_fields.append('salary_ron')
 
@@ -1083,7 +1141,7 @@ class ContractDetailView(APIView):
             update_fields.append('department')
 
         if contract.end_date is not None and contract.end_date < contract.start_date:
-            return Response({"detail": "end_date cannot be before start_date."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'end_date cannot be before start_date.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if update_fields:
             contract.save(update_fields=update_fields + ['updated_at'])
@@ -1102,11 +1160,13 @@ class PayrollListView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({"detail": "Only CEO and HR can view payroll."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only CEO and HR can view payroll.'}, status=status.HTTP_403_FORBIDDEN)
 
         month_raw = request.query_params.get('month')
         if not month_raw:
-            return Response({'detail': 'month query parameter is required (YYYY-MM).'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'detail': 'month query parameter is required (YYYY-MM).'}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         try:
             month_start = date.fromisoformat(f'{month_raw}-01')
@@ -1122,12 +1182,18 @@ class PayrollListView(APIView):
                 bonus_override = Decimal(str(bonus_raw))
                 deductions_override = Decimal(str(deductions_raw))
             except (InvalidOperation, TypeError):
-                return Response({'detail': 'bonus and deductions must be numeric values.'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {'detail': 'bonus and deductions must be numeric values.'}, status=status.HTTP_400_BAD_REQUEST
+                )
 
-        entries = PayrollEntry.objects.select_related('employee', 'employee__department').filter(
-            month__year=month_start.year,
-            month__month=month_start.month,
-        ).order_by('id')
+        entries = (
+            PayrollEntry.objects.select_related('employee', 'employee__department')
+            .filter(
+                month__year=month_start.year,
+                month__month=month_start.month,
+            )
+            .order_by('id')
+        )
 
         rows = []
         total_base = Decimal('0.00')
@@ -1160,7 +1226,9 @@ class PayrollListView(APIView):
                 {
                     'id': entry.id,
                     'employee': entry.employee_id,
-                    'employee_name': (f'{entry.employee.first_name} {entry.employee.last_name}'.strip() or entry.employee.username),
+                    'employee_name': (
+                        f'{entry.employee.first_name} {entry.employee.last_name}'.strip() or entry.employee.username
+                    ),
                     'department': entry.employee.department.name if entry.employee.department else None,
                     'month': month_start.isoformat(),
                     'base_salary_ron': self._format_money(base),
@@ -1188,6 +1256,7 @@ class PayrollListView(APIView):
 
 class SupplierListView(APIView):
     """Return list of suppliers (for frontend receive form)."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -1205,13 +1274,17 @@ class InventoryProductPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
+
 class InventoryProductsView(APIView):
     """Return products with search, category, and status filters. Supports conditional pagination."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         if getattr(request.user, 'role', None) not in [User.Role.INVENTORY, User.Role.CEO]:
-            return Response({'detail': 'Only Inventory Managers and CEO can view products.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Only Inventory Managers and CEO can view products.'}, status=status.HTTP_403_FORBIDDEN
+            )
 
         search = request.query_params.get('search', '').strip()
         category = request.query_params.get('category', 'All').strip()
@@ -1221,7 +1294,7 @@ class InventoryProductsView(APIView):
 
         if search:
             qs = qs.filter(Q(name__icontains=search) | Q(sku__icontains=search))
-        
+
         if category and category.lower() != 'all':
             qs = qs.filter(category__iexact=category)
 
@@ -1254,7 +1327,7 @@ class InventoryProductsView(APIView):
         for p in iterable:
             stock = int(p.stock_count or 0)
             minimum = int(p.min_stock or 0)
-            
+
             if stock <= 0:
                 status_val = 'OUT'
             elif stock < minimum:
@@ -1262,17 +1335,19 @@ class InventoryProductsView(APIView):
             else:
                 status_val = 'OK'
 
-            products.append({
-                'id': p.id,
-                'name': p.name,
-                'sku': p.sku,
-                'category': p.category,
-                'stock_count': stock,
-                'min_stock': minimum,
-                'unit_price_ron': float(p.unit_price_ron or 0),
-                'status': status_val,
-                'shortfall': max(0, minimum - stock),
-            })
+            products.append(
+                {
+                    'id': p.id,
+                    'name': p.name,
+                    'sku': p.sku,
+                    'category': p.category,
+                    'stock_count': stock,
+                    'min_stock': minimum,
+                    'unit_price_ron': float(p.unit_price_ron or 0),
+                    'status': status_val,
+                    'shortfall': max(0, minimum - stock),
+                }
+            )
 
         if is_paginated:
             return paginator.get_paginated_response(products)
@@ -1281,7 +1356,7 @@ class InventoryProductsView(APIView):
     def post(self, request):
         if getattr(request.user, 'role', None) not in [User.Role.INVENTORY, User.Role.CEO]:
             return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
-        
+
         serializer = ProductSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
@@ -1295,7 +1370,7 @@ class InventoryProductDetailView(APIView):
     def patch(self, request, id):
         if getattr(request.user, 'role', None) not in [User.Role.INVENTORY, User.Role.CEO]:
             return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
-        
+
         product = get_object_or_404(Product, id=id)
         serializer = ProductSerializer(product, data=request.data, partial=True)
         if serializer.is_valid():
@@ -1306,6 +1381,7 @@ class InventoryProductDetailView(APIView):
 
 class StockMovementCreateView(APIView):
     """Create inbound/outbound stock movement. POST only."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -1360,7 +1436,10 @@ class StockMovementCreateView(APIView):
         product = movement.product
         product_data = ProductSerializer(product).data
 
-        return Response({'movement': StockMovementSerializer(movement).data, 'product': product_data}, status=status.HTTP_201_CREATED)
+        return Response(
+            {'movement': StockMovementSerializer(movement).data, 'product': product_data},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class DashboardItView(APIView):
@@ -1368,10 +1447,10 @@ class DashboardItView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({
-                "detail": "Access denied. Only IT and CEO can view this dashboard."}, status=status.HTTP_403_FORBIDDEN
+            return Response(
+                {'detail': 'Access denied. Only IT and CEO can view this dashboard.'}, status=status.HTTP_403_FORBIDDEN
             )
-        
+
         now = timezone.now()
         start_of_week = now - timedelta(days=now.weekday())
         start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1379,24 +1458,14 @@ class DashboardItView(APIView):
         base_stats = Ticket.objects.aggregate(
             open_ticket=Count('id', filter=Q(status=Ticket.Status.OPEN)),
             in_progress=Count('id', filter=Q(status=Ticket.Status.IN_PROGRESS)),
-            resolved_this_week=Count('id', filter=Q(
-                status=Ticket.Status.RESOLVED,
-                resolved_at__gte=start_of_week
-            )),
-            critical_open=Count('id', filter=Q(
-                status=Ticket.Status.OPEN,
-                priority__in=[Ticket.Priority.HIGH, Ticket.Priority.URGENT]
-            ))
+            resolved_this_week=Count('id', filter=Q(status=Ticket.Status.RESOLVED, resolved_at__gte=start_of_week)),
+            critical_open=Count(
+                'id', filter=Q(status=Ticket.Status.OPEN, priority__in=[Ticket.Priority.HIGH, Ticket.Priority.URGENT])
+            ),
         )
 
-        resolved_qs = Ticket.objects.filter(
-            status=Ticket.Status.RESOLVED,
-            resolved_at__gte=start_of_week
-        ).annotate(
-            duration=ExpressionWrapper(
-                F('resolved_at') - F('created_at'),
-                output_field=DurationField()
-            )
+        resolved_qs = Ticket.objects.filter(status=Ticket.Status.RESOLVED, resolved_at__gte=start_of_week).annotate(
+            duration=ExpressionWrapper(F('resolved_at') - F('created_at'), output_field=DurationField())
         )
 
         perf_metrics = resolved_qs.aggregate(
@@ -1413,16 +1482,19 @@ class DashboardItView(APIView):
         if total_resolved > 0:
             sla_pct = round((perf_metrics['sla_met_count'] / total_resolved) * 100, 2)
 
-        return Response({
-            "open_ticket": base_stats['open_ticket'],
-            "in_progress": base_stats['in_progress'],
-            "resolved_this_week": total_resolved,
-            "ceo_it_summary": {
-                "avg_resolution_time_hrs": avg_hrs,
-                "sla_met_percentage": sla_pct,
-                "critical_open": base_stats['critical_open'],
-            }
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                'open_ticket': base_stats['open_ticket'],
+                'in_progress': base_stats['in_progress'],
+                'resolved_this_week': total_resolved,
+                'ceo_it_summary': {
+                    'avg_resolution_time_hrs': avg_hrs,
+                    'sla_met_percentage': sla_pct,
+                    'critical_open': base_stats['critical_open'],
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ItTicketTrendView(APIView):
@@ -1431,7 +1503,7 @@ class ItTicketTrendView(APIView):
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.IT]:
             return Response(
-                {"detail": "Access denied. Only IT and CEO can view ticket trends."},
+                {'detail': 'Access denied. Only IT and CEO can view ticket trends.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -1461,14 +1533,8 @@ class ItTicketTrendView(APIView):
             .order_by('week')
         )
 
-        opened_by_week = {
-            row['week'].date().isoformat(): row['opened_count']
-            for row in opened_rows
-        }
-        closed_by_week = {
-            row['week'].date().isoformat(): row['closed_count']
-            for row in closed_rows
-        }
+        opened_by_week = {row['week'].date().isoformat(): row['opened_count'] for row in opened_rows}
+        closed_by_week = {row['week'].date().isoformat(): row['closed_count'] for row in closed_rows}
 
         weeks = []
         for week_index in range(6):
@@ -1484,13 +1550,14 @@ class ItTicketTrendView(APIView):
 
         return Response({'weeks': weeks}, status=status.HTTP_200_OK)
 
+
 class TechnicianStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         if request.user.role not in [User.Role.CEO, User.Role.IT]:
             return Response(
-                {"detail": "Access denied. Only IT and CEO can view technician stats."},
+                {'detail': 'Access denied. Only IT and CEO can view technician stats.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -1531,10 +1598,7 @@ class TechnicianStatsView(APIView):
             .order_by('assigned_to__username')
         )
 
-        rows_by_user = {
-            row['assigned_to_id']: row
-            for row in resolved_rows
-        }
+        rows_by_user = {row['assigned_to_id']: row for row in resolved_rows}
 
         technicians = []
         for tech in User.objects.filter(role=User.Role.IT).order_by('username'):
@@ -1569,7 +1633,6 @@ class TechnicianStatsView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-
 
 
 class TicketPagination(PageNumberPagination):
@@ -1642,19 +1705,14 @@ class TicketFilterSet(filters.FilterSet):
 
     def filter_search(self, queryset, name, value):
         return queryset.filter(
-            Q(title__icontains=value)
-            | Q(description__icontains=value)
-            | Q(ticket_number__icontains=value)
+            Q(title__icontains=value) | Q(description__icontains=value) | Q(ticket_number__icontains=value)
         )
 
     def filter_category(self, queryset, name, value):
         if value.isdigit():
             return queryset.filter(department_id=int(value))
 
-        return queryset.filter(
-            Q(department__name__iexact=value)
-            | Q(department__slug__iexact=value)
-        )
+        return queryset.filter(Q(department__name__iexact=value) | Q(department__slug__iexact=value))
 
     def filter_assigned_to(self, queryset, name, value):
         request = getattr(self, 'request', None)
@@ -1682,11 +1740,13 @@ class TicketListCreateView(ListCreateAPIView):
     def get_queryset(self):
         request = self.request
         if request.user.role not in [User.Role.IT, User.Role.CEO]:
-            raise PermissionDenied("Only IT technicians and CEO can view tickets.")
+            raise PermissionDenied('Only IT technicians and CEO can view tickets.')
 
-        return Ticket.objects.select_related(
-            'department', 'requested_by', 'assigned_to', 'requested_for'
-        ).all().order_by('-created_at')
+        return (
+            Ticket.objects.select_related('department', 'requested_by', 'assigned_to', 'requested_for')
+            .all()
+            .order_by('-created_at')
+        )
 
     def create(self, request, *args, **kwargs):
         """Allow any authenticated user to create a ticket"""
@@ -1747,14 +1807,14 @@ class LatestHrDigestView(APIView):
 
         serializer = ReportSerializer(report)
         return Response(serializer.data, status=status.HTTP_200_OK)
-      
-      
+
+
 class OrderListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can create orders."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Sales and CEO can create orders.'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = OrderCreateSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
@@ -1766,16 +1826,13 @@ class OrderListView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view orders."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Sales and CEO can view orders.'}, status=status.HTTP_403_FORBIDDEN)
 
         queryset = Order.objects.select_related('customer').all().order_by('-date', '-id')
 
         search = request.query_params.get('search', '').strip()
         if search:
-            queryset = queryset.filter(
-                Q(order_number__icontains=search) |
-                Q(customer__name__icontains=search)
-            )
+            queryset = queryset.filter(Q(order_number__icontains=search) | Q(customer__name__icontains=search))
 
         status_filter = request.query_params.get('status', '').strip()
         if status_filter:
@@ -1799,7 +1856,7 @@ class OrderDetailView(APIView):
 
     def get(self, request, id):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view orders."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Sales and CEO can view orders.'}, status=status.HTTP_403_FORBIDDEN)
 
         order = get_object_or_404(
             Order.objects.select_related('customer', 'created_by').prefetch_related('items__product'),
@@ -1810,7 +1867,7 @@ class OrderDetailView(APIView):
 
     def patch(self, request, id):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can update orders."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Sales and CEO can update orders.'}, status=status.HTTP_403_FORBIDDEN)
 
         order = get_object_or_404(
             Order.objects.select_related('customer', 'created_by').prefetch_related('items__product'),
@@ -1819,11 +1876,11 @@ class OrderDetailView(APIView):
 
         status_value = (request.data.get('status') or '').strip().upper()
         if not status_value:
-            return Response({"detail": "status is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'status is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         valid_statuses = {choice[0] for choice in Order.Status.choices}
         if status_value not in valid_statuses:
-            return Response({"detail": "Invalid status value."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Invalid status value.'}, status=status.HTTP_400_BAD_REQUEST)
 
         allowed_transitions = {
             Order.Status.PROCESSING: [Order.Status.SHIPPED, Order.Status.CANCELLED],
@@ -1835,7 +1892,7 @@ class OrderDetailView(APIView):
         if status_value != order.status:
             allowed_next = allowed_transitions.get(order.status, [])
             if status_value not in allowed_next:
-                return Response({"detail": "Invalid status transition."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'detail': 'Invalid status transition.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if status_value != order.status:
             order.status = status_value
@@ -1860,7 +1917,9 @@ class SalesDashboardView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view sales KPI dashboard."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Only Sales and CEO can view sales KPI dashboard.'}, status=status.HTTP_403_FORBIDDEN
+            )
 
         today = timezone.localdate()
         yesterday = today - timedelta(days=1)
@@ -1880,11 +1939,14 @@ class SalesDashboardView(APIView):
 
         pending_orders = base_queryset.filter(status=Order.Status.PROCESSING).aggregate(count=Count('id'))['count'] or 0
 
-        returns_this_week = base_queryset.filter(
-            status=Order.Status.CANCELLED,
-            date__gte=start_of_week,
-            date__lte=today,
-        ).aggregate(count=Count('id'))['count'] or 0
+        returns_this_week = (
+            base_queryset.filter(
+                status=Order.Status.CANCELLED,
+                date__gte=start_of_week,
+                date__lte=today,
+            ).aggregate(count=Count('id'))['count']
+            or 0
+        )
 
         orders_today = today_stats['orders_today'] or 0
         revenue_today_ron = today_stats['revenue_today_ron'] or 0
@@ -1909,7 +1971,9 @@ class SalesDailyOrdersView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view daily orders analytics."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Only Sales and CEO can view daily orders analytics.'}, status=status.HTTP_403_FORBIDDEN
+            )
 
         today = timezone.localdate()
         start_date = today - timedelta(days=6)
@@ -1933,10 +1997,12 @@ class SalesDailyOrdersView(APIView):
         for index in range(7):
             current_day = start_date + timedelta(days=index)
             day_key = current_day.isoformat()
-            days.append({
-                'date': day_key,
-                'orders_count': by_day.get(day_key, 0),
-            })
+            days.append(
+                {
+                    'date': day_key,
+                    'orders_count': by_day.get(day_key, 0),
+                }
+            )
 
         return Response({'days': days}, status=status.HTTP_200_OK)
 
@@ -1946,15 +2012,16 @@ class SalesTopProductsView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view top products analytics."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Only Sales and CEO can view top products analytics.'}, status=status.HTTP_403_FORBIDDEN
+            )
 
         today = timezone.localdate()
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=6)
 
         products = (
-            OrderItem.objects
-            .annotate(order_day=TruncDay('order__date'))
+            OrderItem.objects.annotate(order_day=TruncDay('order__date'))
             .filter(order__date__gte=week_start, order__date__lte=week_end)
             .values('product', 'product__name', 'product__sku')
             .annotate(
@@ -1990,22 +2057,28 @@ class InventoryDashboardView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.INVENTORY, User.Role.CEO]:
-            return Response({"detail": "Only Inventory Managers and CEO can view this dashboard."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Only Inventory Managers and CEO can view this dashboard.'}, status=status.HTTP_403_FORBIDDEN
+            )
 
         total_products = Product.objects.count()
         low_stock_count = Product.objects.filter(stock_count__lt=F('min_stock'), stock_count__gt=0).count()
         out_of_stock_count = Product.objects.filter(stock_count=0).count()
         deliveries_today = StockMovement.objects.filter(
-            movement_type=StockMovement.Type.INBOUND,
-            expected_date=date.today()
+            movement_type=StockMovement.Type.INBOUND, expected_date=date.today()
         ).count()
 
-        return Response({
-            "total_products": total_products,
-            "low_stock_count": low_stock_count,
-            "out_of_stock_count": out_of_stock_count,
-            "deliveries_today": deliveries_today
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                'total_products': total_products,
+                'low_stock_count': low_stock_count,
+                'out_of_stock_count': out_of_stock_count,
+                'deliveries_today': deliveries_today,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class ProductPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = 'page_size'
@@ -2030,15 +2103,15 @@ class SalesProductsView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view the product catalogue."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Only Sales and CEO can view the product catalogue.'}, status=status.HTTP_403_FORBIDDEN
+            )
 
         queryset = Product.objects.all().order_by('name')
 
         search = request.query_params.get('search', '').strip()
         if search:
-            queryset = queryset.filter(
-                Q(name__icontains=search) | Q(sku__icontains=search)
-            )
+            queryset = queryset.filter(Q(name__icontains=search) | Q(sku__icontains=search))
 
         category = request.query_params.get('category', '').strip()
         if category:
@@ -2061,16 +2134,14 @@ class CustomerListView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view customers."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Sales and CEO can view customers.'}, status=status.HTTP_403_FORBIDDEN)
 
-        customers = (
-            Customer.objects
-            .annotate(
-                total_value_ron=Coalesce(Sum('orders__value_ron'), Value(0), output_field=DecimalField(max_digits=12, decimal_places=2)),
-                orders_count=Count('orders'),
-            )
-            .order_by('-total_value_ron', 'name')
-        )
+        customers = Customer.objects.annotate(
+            total_value_ron=Coalesce(
+                Sum('orders__value_ron'), Value(0), output_field=DecimalField(max_digits=12, decimal_places=2)
+            ),
+            orders_count=Count('orders'),
+        ).order_by('-total_value_ron', 'name')
 
         paginator = CustomerPagination()
         paginated = paginator.paginate_queryset(customers, request)
@@ -2083,7 +2154,7 @@ class CustomerDetailView(APIView):
 
     def get(self, request, id):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view customers."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Sales and CEO can view customers.'}, status=status.HTTP_403_FORBIDDEN)
 
         customer = get_object_or_404(Customer.objects.prefetch_related('orders'), id=id)
         serializer = CustomerDetailSerializer(customer)
@@ -2095,7 +2166,7 @@ class InvoiceListView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view invoices."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Sales and CEO can view invoices.'}, status=status.HTTP_403_FORBIDDEN)
 
         today = timezone.localdate()
         all_invoices = Invoice.objects.all()
@@ -2104,7 +2175,8 @@ class InvoiceListView(APIView):
             paid_total=Sum('amount_ron', filter=Q(status=Invoice.Status.PAID)),
             pending_total=Sum(
                 'amount_ron',
-                filter=Q(status__in=[Invoice.Status.DRAFT, Invoice.Status.ISSUED]) & (Q(due_date__gte=today) | Q(due_date__isnull=True)),
+                filter=Q(status__in=[Invoice.Status.DRAFT, Invoice.Status.ISSUED])
+                & (Q(due_date__gte=today) | Q(due_date__isnull=True)),
             ),
             overdue_total=Sum(
                 'amount_ron',
@@ -2136,7 +2208,7 @@ class InvoiceDetailView(APIView):
 
     def get(self, request, id):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view invoices."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Sales and CEO can view invoices.'}, status=status.HTTP_403_FORBIDDEN)
 
         invoice = get_object_or_404(
             Invoice.objects.select_related('order', 'order__customer').prefetch_related('order__items__product'),
@@ -2147,7 +2219,7 @@ class InvoiceDetailView(APIView):
 
     def patch(self, request, id):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can update invoices."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Only Sales and CEO can update invoices.'}, status=status.HTTP_403_FORBIDDEN)
 
         invoice = get_object_or_404(
             Invoice.objects.select_related('order', 'order__customer').prefetch_related('order__items__product'),
@@ -2156,10 +2228,10 @@ class InvoiceDetailView(APIView):
 
         status_value = (request.data.get('status') or '').strip().upper()
         if not status_value:
-            return Response({"detail": "status is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'status is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if status_value != Invoice.Status.PAID:
-            return Response({"detail": "Only PAID status updates are supported."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Only PAID status updates are supported.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if invoice.status != Invoice.Status.PAID:
             invoice.status = Invoice.Status.PAID
@@ -2174,14 +2246,11 @@ class SalesChannelSplitView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view channel split analytics."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Only Sales and CEO can view channel split analytics.'}, status=status.HTTP_403_FORBIDDEN
+            )
 
-        rows = (
-            Order.objects
-            .values('channel')
-            .annotate(orders_count=Count('id'))
-            .order_by('channel')
-        )
+        rows = Order.objects.values('channel').annotate(orders_count=Count('id')).order_by('channel')
         total_orders = sum(row['orders_count'] for row in rows)
 
         channels = []
@@ -2211,7 +2280,9 @@ class SalesRevenueTrendView(APIView):
 
     def get(self, request):
         if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({"detail": "Only Sales and CEO can view revenue trend analytics."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'detail': 'Only Sales and CEO can view revenue trend analytics.'}, status=status.HTTP_403_FORBIDDEN
+            )
 
         today = timezone.localdate()
         start_date = today - timedelta(days=6)
@@ -2247,7 +2318,9 @@ class ReportListView(APIView):
         category = request.query_params.get('category')
         if category:
             if category not in allowed_categories:
-                return Response({'detail': 'You do not have access to reports in this category.'}, status=status.HTTP_403_FORBIDDEN)
+                return Response(
+                    {'detail': 'You do not have access to reports in this category.'}, status=status.HTTP_403_FORBIDDEN
+                )
             reports = reports.filter(category=category)
         return Response(ReportSerializer(reports, many=True).data)
 
@@ -2257,6 +2330,7 @@ class ReportDownloadView(APIView):
 
     def get(self, request, id):
         from pathlib import Path
+
         report = get_object_or_404(Report, id=id)
         if not _can_access_report(request.user, report):
             return Response({'detail': 'You do not have access to this report.'}, status=status.HTTP_403_FORBIDDEN)
@@ -2265,7 +2339,7 @@ class ReportDownloadView(APIView):
         path = Path(report.file_path)
         if not path.exists():
             return Response({'detail': 'File not found on server.'}, status=status.HTTP_404_NOT_FOUND)
-        
+
         # Determine content type based on file extension
         ext = path.suffix.lower()
         if ext == '.pdf':
@@ -2274,7 +2348,7 @@ class ReportDownloadView(APIView):
             content_type = 'text/csv'
         else:
             content_type = 'application/octet-stream'
-        
+
         return FileResponse(open(path, 'rb'), content_type=content_type, as_attachment=True, filename=path.name)
 
 
@@ -2283,6 +2357,7 @@ class ReportGenerateView(APIView):
 
     def post(self, request, slug):
         from .agent import AgentRunner, get_registry
+
         if request.user.role != User.Role.CEO and not request.user.is_staff:
             raise PermissionDenied('Only CEO or admin can generate reports.')
         report = get_object_or_404(Report, slug=slug)
@@ -2301,10 +2376,14 @@ class ReportGenerateView(APIView):
         result = agent.run(message=message, history=[])
 
         report.refresh_from_db()
-        return Response({
-            'response': result.get('response') or f'The {report.name} report has been generated and is ready to view.',
-            'report': ReportSerializer(report).data,
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                'response': result.get('response')
+                or f'The {report.name} report has been generated and is ready to view.',
+                'report': ReportSerializer(report).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ReportViewView(APIView):
@@ -2312,6 +2391,7 @@ class ReportViewView(APIView):
 
     def get(self, request, id):
         from pathlib import Path
+
         report = get_object_or_404(Report, id=id)
         if not _can_access_report(request.user, report):
             return Response({'detail': 'You do not have access to this report.'}, status=status.HTTP_403_FORBIDDEN)
@@ -2330,7 +2410,7 @@ class SystemStatusListView(APIView):
         # Only CEO and IT can view system status
         if request.user.role not in [User.Role.CEO, User.Role.IT]:
             raise PermissionDenied('Only CEO or IT team can view system status.')
-        
+
         systems = SystemStatus.objects.all()
         serializer = SystemStatusSerializer(systems, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -2339,19 +2419,20 @@ class SystemStatusListView(APIView):
 class AssistantChatView(APIView):
     """
     API endpoint for the MIEZ Assistant chat functionality.
-    
+
     POST /api/assistant/chat/
     - Accepts a user message and conversation history
     - Instantiates AgentRunner with role-specific system prompt and tools
     - Returns agent response and any tool calls made
     - Rate limited: 20 requests per user per minute
     """
+
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request):
         """
         Handle chat message POST request.
-        
+
         Request body:
         {
             "message": "user message",
@@ -2360,7 +2441,7 @@ class AssistantChatView(APIView):
                 {"role": "assistant", "content": "..."}
             ]
         }
-        
+
         Response:
         {
             "response": "agent response text",
@@ -2378,11 +2459,11 @@ class AssistantChatView(APIView):
                     'rate_limit': {
                         'limit': 20,
                         'window_seconds': 60,
-                    }
+                    },
                 },
-                status=status.HTTP_429_TOO_MANY_REQUESTS
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
-        
+
         # Validate request
         serializer = AssistantChatRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -2420,8 +2501,7 @@ class AssistantChatView(APIView):
             response_serializer = AssistantChatResponseSerializer(data=result)
             if not response_serializer.is_valid():
                 return Response(
-                    {'detail': 'Invalid agent response format'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    {'detail': 'Invalid agent response format'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
             data = response_serializer.data
@@ -2430,26 +2510,25 @@ class AssistantChatView(APIView):
 
         except Exception as e:
             return Response(
-                {'detail': f'Error processing chat: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'detail': f'Error processing chat: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
+
     def _check_rate_limit(self, user) -> bool:
         """
         Check rate limit for user: max 20 requests per minute.
-        
+
         Args:
             user: Django User object
-        
+
         Returns:
             True if within limit, False if exceeded
         """
         cache_key = f'assistant_chat_rate_limit_{user.id}'
         request_count = cache.get(cache_key, 0)
-        
+
         if request_count >= 20:
             return False
-        
+
         # Increment and set 60-second expiry
         cache.set(cache_key, request_count + 1, timeout=60)
         return True
@@ -2457,21 +2536,19 @@ class AssistantChatView(APIView):
 
 class HrDigestGenerateView(APIView):
     """Generate weekly HR digest with insights and create notifications for critical issues."""
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         # Only CEO can request digest generation
         if request.user.role != User.Role.CEO:
-            return Response(
-                {"detail": "Only CEO can request HR digest generation."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
+            return Response({'detail': 'Only CEO can request HR digest generation.'}, status=status.HTTP_403_FORBIDDEN)
+
         try:
             # Generate the digest
             generator = DigestGenerator()
             digest = generator.generate()
-            
+
             # Save as Report record
             report = Report.objects.create(
                 name=f'HR Weekly Digest - {generator.week_start.strftime("%Y-%m-%d")}',
@@ -2484,7 +2561,7 @@ class HrDigestGenerateView(APIView):
                 generated_at=generator.generated_at,
                 digest_data=digest,
             )
-            
+
             # Create notification for HR Manager if critical issues exist
             critical_insights = digest.get('critical', [])
             if critical_insights:
@@ -2492,7 +2569,7 @@ class HrDigestGenerateView(APIView):
             else:
                 # Log entry: No anomalies detected
                 pass
-            
+
             return Response(
                 {
                     'success': True,
@@ -2500,15 +2577,14 @@ class HrDigestGenerateView(APIView):
                     'report_id': report.id,
                     'notifications_sent': len(critical_insights) > 0,
                 },
-                status=status.HTTP_200_OK
+                status=status.HTTP_200_OK,
             )
-        
+
         except Exception as e:
             return Response(
-                {'detail': f'Error generating digest: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'detail': f'Error generating digest: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
+
     def _notify_hr_managers(self, digest):
         """Create notifications for active HR Managers with critical issue summary."""
         summary = digest['summary_line']
@@ -2620,20 +2696,14 @@ class WorkflowTriggersView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response([
-            {'value': v, 'label': l}
-            for v, l in Workflow.TriggerType.choices
-        ])
+        return Response([{'value': v, 'label': l} for v, l in Workflow.TriggerType.choices])
 
 
 class WorkflowActionsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response([
-            {'value': v, 'label': l}
-            for v, l in Workflow.ActionType.choices
-        ])
+        return Response([{'value': v, 'label': l} for v, l in Workflow.ActionType.choices])
 
 
 class WorkflowLogListView(APIView):
@@ -2650,26 +2720,29 @@ class RunInsightsAgentView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from django.core.cache import cache
         from datetime import date
 
+        from django.core.cache import cache
+
         if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Forbidden. Only CEO and HR Manager can run insights.'}, status=status.HTTP_403_FORBIDDEN)
-            
+            return Response(
+                {'detail': 'Forbidden. Only CEO and HR Manager can run insights.'}, status=status.HTTP_403_FORBIDDEN
+            )
+
         cache_key = f'run_insights_agent_{request.user.id}_{date.today().isoformat()}'
         count = cache.get(cache_key, 0)
-        
+
         if count >= 3:
-            return Response({'detail': 'Rate limit exceeded: max 3 manual triggers per day.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
-            
+            return Response(
+                {'detail': 'Rate limit exceeded: max 3 manual triggers per day.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         cache.set(cache_key, count + 1, timeout=86400)
 
         self._spawn_agent()
 
-        return Response({
-            'status': 'running',
-            'estimated_time': '~15 seconds'
-        }, status=status.HTTP_200_OK)
+        return Response({'status': 'running', 'estimated_time': '~15 seconds'}, status=status.HTTP_200_OK)
 
     def _spawn_agent(self):
         """Run the HR agent in a background thread.
@@ -2679,6 +2752,7 @@ class RunInsightsAgentView(APIView):
         which deadlocks the shared SQLite test database).
         """
         import threading
+
         from django.core.management import call_command
         from django.db import connection
 
@@ -2703,13 +2777,15 @@ class NotificationListView(APIView):
         page_size = min(int(request.query_params.get('page_size', 20)), 50)
         page = max(int(request.query_params.get('page', 1)), 1)
         total = qs.count()
-        results = qs[(page - 1) * page_size: page * page_size]
+        results = qs[(page - 1) * page_size : page * page_size]
         serializer = NotificationSerializer(results, many=True)
-        return Response({
-            'count': total,
-            'unread_count': unread_count,
-            'results': serializer.data,
-        })
+        return Response(
+            {
+                'count': total,
+                'unread_count': unread_count,
+                'results': serializer.data,
+            }
+        )
 
 
 class NotificationDetailView(APIView):

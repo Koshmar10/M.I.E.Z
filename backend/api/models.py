@@ -168,8 +168,7 @@ class Order(models.Model):
     def save(self, *args, **kwargs):
         if not self.order_number:
             last_order_number = (
-                Order.objects
-                .filter(order_number__startswith='#')
+                Order.objects.filter(order_number__startswith='#')
                 .order_by('-id')
                 .values_list('order_number', flat=True)
                 .first()
@@ -220,7 +219,9 @@ class StockMovement(models.Model):
     movement_type = models.CharField(max_length=12, choices=Type.choices)
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='stock_movements')
     # supplier is optional for adjustments or write-offs where supplier may not apply
-    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name='stock_movements')
+    supplier = models.ForeignKey(
+        Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name='stock_movements'
+    )
     quantity = models.PositiveIntegerField(default=0)
     expected_date = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True, default='')
@@ -258,32 +259,29 @@ class StockMovement(models.Model):
 
     def _evaluate_stock_workflows(self):
         from django.utils import timezone
-        workflows = Workflow.objects.filter(
-            trigger_type=Workflow.TriggerType.STOCK_BELOW_MINIMUM, 
-            is_active=True
-        )
+
+        workflows = Workflow.objects.filter(trigger_type=Workflow.TriggerType.STOCK_BELOW_MINIMUM, is_active=True)
         for wf in workflows:
             config = wf.trigger_config or {}
             target_product_id = config.get('product_id')
             if target_product_id and str(target_product_id) != str(self.product.id):
                 continue
-            
+
             threshold = config.get('threshold', getattr(self.product, 'min_stock', 10))
             if self.product.stock_count < int(threshold):
                 actions_log = []
                 for action in wf.actions:
                     act_type = action.get('type', str(action)) if isinstance(action, dict) else str(action)
-                    actions_log.append({
-                        "action": act_type,
-                        "status": "success",
-                        "message": f"Executed {act_type} for product {self.product.name} (stock {self.product.stock_count} < threshold {threshold})"
-                    })
+                    actions_log.append(
+                        {
+                            'action': act_type,
+                            'status': 'success',
+                            'message': f'Executed {act_type} for product {self.product.name} (stock {self.product.stock_count} < threshold {threshold})',
+                        }
+                    )
 
                 WorkflowLog.objects.create(
-                    workflow=wf,
-                    trigger_type=wf.trigger_type,
-                    actions_log=actions_log,
-                    success=True
+                    workflow=wf, trigger_type=wf.trigger_type, actions_log=actions_log, success=True
                 )
                 wf.last_triggered_at = timezone.now()
                 wf.save(update_fields=['last_triggered_at'])
@@ -337,13 +335,17 @@ class LeaveRequest(models.Model):
         REJECTED = 'REJECTED', 'Rejected'
 
     employee = models.ForeignKey(User, on_delete=models.CASCADE, related_name='leave_requests')
-    department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='leave_requests')
+    department = models.ForeignKey(
+        Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='leave_requests'
+    )
     type = models.CharField(max_length=16, choices=Type.choices, default=Type.VACATION)
     from_date = models.DateField()
     to_date = models.DateField()
     reason = models.TextField(blank=True, default='')
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
-    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='leave_requests_approved')
+    approved_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='leave_requests_approved'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -355,7 +357,9 @@ class Contract(models.Model):
 
     contract_number = models.CharField(max_length=40, unique=True)
     employee = models.ForeignKey(User, on_delete=models.CASCADE, related_name='contracts')
-    department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='contracts')
+    department = models.ForeignKey(
+        Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='contracts'
+    )
     type = models.CharField(max_length=16, choices=Type.choices, default=Type.EMPLOYMENT)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
@@ -412,8 +416,12 @@ class Ticket(models.Model):
     priority = models.CharField(max_length=12, choices=Priority.choices, default=Priority.MEDIUM)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.OPEN)
     requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='tickets_requested')
-    requested_for = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='tickets_requested_for')
-    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='tickets_assigned')
+    requested_for = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='tickets_requested_for'
+    )
+    assigned_to = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='tickets_assigned'
+    )
     location = models.CharField(max_length=160, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -453,24 +461,24 @@ class TicketComment(models.Model):
 
 class Workflow(models.Model):
     class TriggerType(models.TextChoices):
-        STOCK_BELOW_MINIMUM      = 'STOCK_BELOW_MINIMUM',      'Stock Below Minimum'
-        NEW_ORDER_RECEIVED       = 'NEW_ORDER_RECEIVED',       'New Order Received'
-        DAILY_AT_TIME            = 'DAILY_AT_TIME',            'Daily At Time'
-        WEEKLY_AT_TIME           = 'WEEKLY_AT_TIME',           'Weekly At Time'
-        NEW_IT_TICKET            = 'NEW_IT_TICKET',            'New IT Ticket'
-        CONTRACT_EXPIRES         = 'CONTRACT_EXPIRES',         'Contract Expires'
-        ORDER_EXCEEDS_THRESHOLD  = 'ORDER_EXCEEDS_THRESHOLD',  'Order Exceeds Threshold'
+        STOCK_BELOW_MINIMUM = 'STOCK_BELOW_MINIMUM', 'Stock Below Minimum'
+        NEW_ORDER_RECEIVED = 'NEW_ORDER_RECEIVED', 'New Order Received'
+        DAILY_AT_TIME = 'DAILY_AT_TIME', 'Daily At Time'
+        WEEKLY_AT_TIME = 'WEEKLY_AT_TIME', 'Weekly At Time'
+        NEW_IT_TICKET = 'NEW_IT_TICKET', 'New IT Ticket'
+        CONTRACT_EXPIRES = 'CONTRACT_EXPIRES', 'Contract Expires'
+        ORDER_EXCEEDS_THRESHOLD = 'ORDER_EXCEEDS_THRESHOLD', 'Order Exceeds Threshold'
 
     class ActionType(models.TextChoices):
-        EMAIL_SUPPLIER           = 'EMAIL_SUPPLIER',           'Email Supplier'
-        NOTIFY_MANAGER           = 'NOTIFY_MANAGER',           'Notify Manager'
-        SEND_CONFIRMATION_EMAIL  = 'SEND_CONFIRMATION_EMAIL',  'Send Confirmation Email'
-        UPDATE_DASHBOARD         = 'UPDATE_DASHBOARD',         'Update Dashboard'
-        GENERATE_REPORT          = 'GENERATE_REPORT',          'Generate Report'
-        EMAIL_CEO                = 'EMAIL_CEO',                'Email CEO'
-        ASSIGN_TO_TEAM_LEAD      = 'ASSIGN_TO_TEAM_LEAD',      'Assign to Team Lead'
-        POST_TO_CHANNEL          = 'POST_TO_CHANNEL',          'Post to Channel'
-        LOG_TO_AUDIT_TRAIL       = 'LOG_TO_AUDIT_TRAIL',       'Log to Audit Trail'
+        EMAIL_SUPPLIER = 'EMAIL_SUPPLIER', 'Email Supplier'
+        NOTIFY_MANAGER = 'NOTIFY_MANAGER', 'Notify Manager'
+        SEND_CONFIRMATION_EMAIL = 'SEND_CONFIRMATION_EMAIL', 'Send Confirmation Email'
+        UPDATE_DASHBOARD = 'UPDATE_DASHBOARD', 'Update Dashboard'
+        GENERATE_REPORT = 'GENERATE_REPORT', 'Generate Report'
+        EMAIL_CEO = 'EMAIL_CEO', 'Email CEO'
+        ASSIGN_TO_TEAM_LEAD = 'ASSIGN_TO_TEAM_LEAD', 'Assign to Team Lead'
+        POST_TO_CHANNEL = 'POST_TO_CHANNEL', 'Post to Channel'
+        LOG_TO_AUDIT_TRAIL = 'LOG_TO_AUDIT_TRAIL', 'Log to Audit Trail'
 
     name = models.CharField(max_length=160)
     trigger_type = models.CharField(max_length=64, choices=TriggerType.choices, blank=True, default='')
@@ -514,7 +522,7 @@ class SystemStatus(models.Model):
         ordering = ['name']
 
     def __str__(self):
-        return f"{self.name} - {self.status}"
+        return f'{self.name} - {self.status}'
 
 
 class Report(models.Model):
@@ -531,7 +539,9 @@ class Report(models.Model):
     period = models.CharField(max_length=80, blank=True, default='')
     file_path = models.CharField(max_length=255, blank=True, default='')
     file_size_kb = models.IntegerField(default=0)
-    generated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reports_generated')
+    generated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reports_generated'
+    )
     generated_at = models.DateTimeField(null=True, blank=True)
     # Store digest data as JSON (for HR digest or similar structured reports)
     digest_data = models.JSONField(null=True, blank=True, default=None)

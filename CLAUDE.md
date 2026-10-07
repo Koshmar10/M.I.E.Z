@@ -38,18 +38,35 @@ npm --prefix frontend run check     # runs every pre-push check locally
 
 ---
 
+## Backend — Layout
+
+```
+backend/api/
+  models/        one file per model (order.py, order_item.py, …); __init__.py re-exports all of them
+  views/         one module per domain area: auth, employees, hr, it, inventory, sales,
+                 reports, assistant, workflows, notifications (+ legacy)
+  serializers/   one module per domain area, mirroring views/
+  urls.py        all /api/ routes, grouped by domain
+  agent/         the AI assistant (runner, tools, operations)
+  management/commands/   CLI jobs (seed_db, run_workflows, run_hr_agent, …)
+```
+
+- New endpoint: put the view in the matching `views/<domain>.py`, its serializers in `serializers/<domain>.py`, and the route in `urls.py` under that domain's comment. Create a new domain module only for a genuinely new area.
+- Views import serializers from their domain module (`from ..serializers.sales import OrderListSerializer`), and models from the package (`from ..models import Order`).
+- A view module must not import from another view module. Shared logic goes into a helper module, not into a view file.
+
 ## Backend — Implementation Rules
 
 ### Use Django and DRF built-ins. Never reimplement what already exists.
 
 | Need | Use this |
 |------|----------|
-| User model | Extend `AbstractUser` (already done in `api/models.py`) |
+| User model | Extend `AbstractUser` (already done in `api/models/user.py`) |
 | Authentication | `CustomAuthentication` in `core/authenticate.py` (reads JWT from cookies) |
 | Password hashing | `user.set_password()` — never hash manually |
 | Permission checks | `permission_classes = [IsAuthenticated]` on views |
 | Object lookup with 404 | `get_object_or_404(Model, ...)` |
-| Pagination | Subclass `PageNumberPagination` (see `EmployeePagination` in `api/views.py`) |
+| Pagination | Subclass `PageNumberPagination` (see `EmployeePagination` in `api/views/employees.py`) |
 | Serialization / validation | DRF `ModelSerializer` — use `is_valid(raise_exception=True)` |
 | DB aggregations | `queryset.aggregate()` / `.annotate()` — not raw SQL or Python loops |
 | Filtering querysets | ORM `.filter()` with `Q` objects — not manual list filtering |
@@ -58,7 +75,8 @@ npm --prefix frontend run check     # runs every pre-push check locally
 
 ### Models
 
-- All models live in `api/models.py`.
+- One model per file in `api/models/`, named after the model in snake_case (`LeaveRequest` → `leave_request.py`). Import every new model in `api/models/__init__.py` (and add it to `__all__`), or Django won't register it.
+- Outside `api/models/`, always import models from the package: `from api.models import Order` (or `from ..models import Order`), never from the individual file.
 - `User` extends `AbstractUser` — never create a separate profile model. Add fields directly to `User`.
 - `AUTH_USER_MODEL = 'api.User'` — always use `get_user_model()` in code that references the user model, not a direct import.
 - Every new model needs a migration: run `python manage.py makemigrations` after any model change.

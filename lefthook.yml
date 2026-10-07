@@ -11,7 +11,7 @@ pre-commit:
     - name: ruff fix
       root: backend/
       glob: "*.py"
-      run: uv run ruff check --fix --exit-zero {staged_files} && uv run ruff format {staged_files}
+      run: uv run ruff check --fix-only --quiet {staged_files} && uv run ruff format --quiet {staged_files}
       stage_fixed: true
 
     - name: eslint fix

@@ -364,12 +364,3 @@ def test_customer_detail_returns_404_for_missing_id(sales_client):
 def test_customer_detail_forbids_non_sales_role(hr_client):
     customer = baker.make(Customer)
     assert hr_client.get(f'/api/customers/{customer.id}/').status_code == 403
-
-
-# ── Products ─────────────────────────────────────────────────────────────────
-
-
-def test_product_availability_mapping_for_stock_thresholds():
-    assert baker.make(Product, stock_count=0).availability == 'Out of Stock'
-    assert baker.make(Product, stock_count=5).availability == 'Low Stock'
-    assert baker.make(Product, stock_count=10).availability == 'In Stock'

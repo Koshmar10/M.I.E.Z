@@ -4,101 +4,67 @@ import json
 from datetime import timedelta
 from unittest.mock import patch
 
+import pytest
 from django.core.management import call_command
-from django.test import TestCase
 from django.utils import timezone
 from model_bakery import baker
-from rest_framework.test import APIClient
 
 from api.models import Attendance, Contract, Department, Notification, PayrollEntry, Report, User, Workflow, WorkflowLog
 
 
-class HrAgentIntegrationTest(TestCase):
-    @classmethod
-    def setUpTestData(cls):
-        # Departments
-        cls.depts = [
-            baker.make(Department, name=n, slug=s)
-            for n, s in (
-                ('Human Resources', 'hr'),
-                ('Sales', 'sales'),
-                ('IT', 'it'),
-                ('Inventory', 'inventory'),
-            )
-        ]
+@pytest.fixture(autouse=True)
+def company(hr_user):
+    """Departments, 7 employees with 4 weeks of attendance, 2 expiring contracts and 1 unpaid payroll entry."""
+    hr, sales, it, inventory = (
+        baker.make(Department, name=name, slug=slug)
+        for name, slug in [('Human Resources', 'hr'), ('Sales', 'sales'), ('IT', 'it'), ('Inventory', 'inventory')]
+    )
+    sales_staff = baker.make(User, role=User.Role.SALES, department=sales, is_active=True, _quantity=2)
+    employees = [
+        *sales_staff,
+        *baker.make(User, role=User.Role.IT, department=it, is_active=True, _quantity=2),
+        *baker.make(User, role=User.Role.INVENTORY, department=inventory, is_active=True, _quantity=2),
+        baker.make(User, role=User.Role.HR, department=hr, is_active=True),
+    ]
 
-        # Users: CEO, HR manager, and 7 employees across departments
-        cls.ceo = baker.make(User, role=User.Role.CEO, username='ceo_integ')
-        cls.hr_manager = baker.make(User, role=User.Role.HR, username='hr_manager_integ', is_active=True)
+    today = timezone.localdate()
+    first_week = today - timedelta(weeks=4)
+    for employee in employees:
+        for week in range(4):
+            for day in range(5):  # mostly present, sometimes remote or absent
+                seed = employee.id + week + day
+                status = (
+                    Attendance.Status.ABSENT
+                    if seed % 11 == 0
+                    else Attendance.Status.REMOTE
+                    if seed % 7 == 0
+                    else Attendance.Status.PRESENT
+                )
+                baker.make(
+                    Attendance, employee=employee, date=first_week + timedelta(weeks=week, days=day), status=status
+                )
 
-        cls.employees = []
-        # 2 in Sales, 2 in IT, 2 in Inventory, 1 in HR
-        cls.employees += [
-            baker.make(User, role=User.Role.SALES, department=cls.depts[1], is_active=True) for _ in range(2)
-        ]
-        cls.employees += [
-            baker.make(User, role=User.Role.IT, department=cls.depts[2], is_active=True) for _ in range(2)
-        ]
-        cls.employees += [
-            baker.make(User, role=User.Role.INVENTORY, department=cls.depts[3], is_active=True) for _ in range(2)
-        ]
-        cls.employees += [
-            baker.make(User, role=User.Role.HR, department=cls.depts[0], is_active=True) for _ in range(1)
-        ]
+    for employee, days_left in [(sales_staff[0], 10), (sales_staff[1], 20)]:
+        baker.make(Contract, employee=employee, department=sales, end_date=today + timedelta(days=days_left))
+    baker.make(PayrollEntry, employee=employees[2], month=today.replace(day=1), paid=False)
+    baker.make(Workflow, name='HR Insights Agent', is_active=True, actions=['GENERATE_REPORT'])
+    return sales_staff
 
-        # 4 weeks of attendance records for each employee
-        today = timezone.localdate()
-        start_week = today - timedelta(weeks=4)
-        for emp in cls.employees:
-            for w in range(4):
-                week_start = start_week + timedelta(weeks=w)
-                for d in range(5):
-                    # make most days present, occasionally remote/absent
-                    status = Attendance.Status.PRESENT
-                    if (emp.id + w + d) % 11 == 0:
-                        status = Attendance.Status.ABSENT
-                    elif (emp.id + w + d) % 7 == 0:
-                        status = Attendance.Status.REMOTE
-                    Attendance.objects.create(employee=emp, date=week_start + timedelta(days=d), status=status)
 
-        # 2 expiring contracts
-        expiring_emp1 = cls.employees[0]
-        expiring_emp2 = cls.employees[1]
-        Contract.objects.create(
-            employee=expiring_emp1,
-            department=cls.depts[1],
-            contract_number='EXP-1',
-            start_date=today - timedelta(days=365),
-            end_date=today + timedelta(days=10),
-        )
-        Contract.objects.create(
-            employee=expiring_emp2,
-            department=cls.depts[1],
-            contract_number='EXP-2',
-            start_date=today - timedelta(days=200),
-            end_date=today + timedelta(days=20),
-        )
+@pytest.fixture
+def agent_reply():
+    """Set what the (mocked) HR agent answers with."""
+    with patch('api.management.commands.run_hr_agent.AgentRunner.run') as run:
 
-        # 1 payroll anomaly - unpaid entry in current month
-        month_start = timezone.now().date().replace(day=1)
-        PayrollEntry.objects.create(
-            employee=cls.employees[2],
-            month=month_start,
-            gross_salary_ron='3000.00',
-            net_salary_ron='2700.00',
-            paid=False,
-        )
+        def reply(digest):
+            run.return_value = {'response': json.dumps(digest), 'tool_calls_made': []}
 
-        # Ensure Workflow exists
-        Workflow.objects.create(name='HR Insights Agent', is_active=True, actions=['GENERATE_REPORT'])
+        yield reply
 
-    def setUp(self):
-        self.client = APIClient()
 
-    @patch('api.management.commands.run_hr_agent.AgentRunner.run')
-    def test_full_hr_agent_cycle_creates_report_and_notifications(self, mocked_run):
-        # Mock agent response with realistic structured JSON digest
-        digest = {
+def test_full_hr_agent_cycle_creates_report_and_notifications(agent_reply, hr_user, hr_client):
+    agent_reply(
+        {
             'week': timezone.localdate().isoformat(),
             'generated_at': timezone.now().isoformat(),
             'critical': [{'title': 'Unpaid Payroll', 'description': '1 unpaid entry'}],
@@ -107,106 +73,64 @@ class HrAgentIntegrationTest(TestCase):
             'summary_line': '1 critical issue — unpaid payroll',
             'period': f'Week of {timezone.localdate().isoformat()}',
         }
-        mocked_run.return_value = {'response': json.dumps(digest), 'tool_calls_made': []}
+    )
 
-        # Run the management command
-        call_command('run_hr_agent')
+    call_command('run_hr_agent')
 
-        # Assert a WorkflowLog created with success=True
-        log = WorkflowLog.objects.order_by('-triggered_at').first()
-        assert log is not None
-        assert log.success
+    assert WorkflowLog.objects.latest('triggered_at').success
+    report = Report.objects.filter(category=Report.Category.HR).latest('generated_at')
+    # run_hr_agent stores the digest either directly or as a JSON string under 'content'
+    digest = report.digest_data
+    if 'summary_line' not in digest:
+        digest = json.loads(digest['content'])
+    assert 'summary_line' in digest
+    assert Notification.objects.filter(recipient=hr_user).exists()
 
-        # Assert Report created with category HR and non-null digest content
-        report = Report.objects.filter(category=Report.Category.HR).order_by('-generated_at').first()
-        assert report is not None
-        assert report.digest_data is not None
-        # run_hr_agent stores the structured digest as a JSON string in digest_data['content']
-        if 'summary_line' not in report.digest_data:
-            content = report.digest_data.get('content')
-            try:
-                parsed = json.loads(content) if isinstance(content, str) else content
-            except Exception:
-                parsed = None
-            assert parsed is not None
-            assert 'summary_line' in parsed
+    latest = hr_client.get('/api/hr/latest-digest/')
+    assert latest.status_code == 200
+    assert latest.json()['id'] == report.id
+    assert latest.json()['category'] == Report.Category.HR
 
-        # Assert Notification created for HR Manager users
-        notifications = Notification.objects.filter(recipient=self.hr_manager)
-        assert notifications.exists()
+    dashboard = hr_client.get('/api/hr/dashboard/')
+    assert dashboard.status_code == 200
+    assert 'summary' in dashboard.json()['latest_digest']
 
-        # Assert GET /api/hr/latest-digest/ returns the created Report
-        self.client.force_authenticate(user=self.hr_manager)
-        resp = self.client.get('/api/hr/latest-digest/')
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data['id'] == report.id
-        assert data['category'] == Report.Category.HR
 
-        # Assert HR dashboard includes digest summary
-        resp2 = self.client.get('/api/hr/dashboard/')
-        assert resp2.status_code == 200
-        assert 'latest_digest' in resp2.json()
-        ld = resp2.json()['latest_digest']
-        assert ld is not None
-        assert 'summary' in ld
+def test_management_command_run_hr_agent_dry_run_no_notification(agent_reply, hr_user):
+    agent_reply({'critical': [{'title': 'Test'}], 'warning': [], 'summary_line': 'test'})
 
-    @patch('api.management.commands.run_hr_agent.AgentRunner.run')
-    def test_management_command_run_hr_agent_dry_run_no_notification(self, mocked_run):
-        Notification.objects.all().delete()
-        digest = {'critical': [{'title': 'Test'}], 'warning': [], 'summary_line': 'test'}
-        mocked_run.return_value = {'response': json.dumps(digest), 'tool_calls_made': []}
+    call_command('run_hr_agent', dry_run=True)
 
-        call_command('run_hr_agent', dry_run=True)
+    assert not Notification.objects.filter(recipient=hr_user).exists()
+    assert WorkflowLog.objects.latest('triggered_at').success
 
-        notifications = Notification.objects.filter(recipient=self.hr_manager)
-        assert not notifications.exists()
 
-        log = WorkflowLog.objects.order_by('-triggered_at').first()
-        assert log.success
+def test_run_hr_agent_zero_insights_no_notification_sent(agent_reply, hr_user):
+    agent_reply({'critical': [], 'warning': [], 'summary_line': 'No issues detected'})
 
-    @patch('api.management.commands.run_hr_agent.AgentRunner.run')
-    def test_run_hr_agent_zero_insights_no_notification_sent(self, mocked_run):
-        Notification.objects.all().delete()
-        digest = {'critical': [], 'warning': [], 'summary_line': 'No issues detected'}
-        mocked_run.return_value = {'response': json.dumps(digest), 'tool_calls_made': []}
+    call_command('run_hr_agent')
 
-        call_command('run_hr_agent')
+    assert not Notification.objects.filter(recipient=hr_user).exists()
 
-        notifications = Notification.objects.filter(recipient=self.hr_manager)
-        assert not notifications.exists()
 
-    @patch('api.management.commands.run_hr_agent.AgentRunner.run')
-    def test_run_hr_agent_critical_insight_creates_notification_type_warning(self, mocked_run):
-        Notification.objects.all().delete()
-        digest = {'critical': [{'title': 'CRITICAL!'}], 'warning': [], 'summary_line': 'Has critical'}
-        mocked_run.return_value = {'response': json.dumps(digest), 'tool_calls_made': []}
+def test_run_hr_agent_critical_insight_creates_notification_type_warning(agent_reply, hr_user):
+    agent_reply({'critical': [{'title': 'CRITICAL!'}], 'warning': [], 'summary_line': 'Has critical'})
 
-        call_command('run_hr_agent')
+    call_command('run_hr_agent')
 
-        notifications = Notification.objects.filter(recipient=self.hr_manager)
-        assert notifications.exists()
-        assert notifications.first().type == 'WARNING'
+    assert Notification.objects.get(recipient=hr_user).type == 'WARNING'
 
-    def test_post_run_insights_agent_non_hr_role_forbidden(self):
-        non_hr = self.employees[0]  # SALES
-        self.client.force_authenticate(user=non_hr)
-        resp = self.client.post('/api/hr/run-insights-agent/')
-        assert resp.status_code == 403
 
-    @patch('api.views.hr.RunInsightsAgentView._spawn_agent')
-    def test_post_run_insights_agent_rate_limit_enforced(self, mock_spawn):
-        # _spawn_agent is mocked so the endpoint doesn't launch real background
-        # threads that would run the agent and lock the shared SQLite test DB.
-        self.client.force_authenticate(user=self.hr_manager)
-        from django.core.cache import cache
+def test_post_run_insights_agent_non_hr_role_forbidden(api_client, company):
+    api_client.force_authenticate(user=company[0])  # a sales employee
+    assert api_client.post('/api/hr/run-insights-agent/').status_code == 403
 
-        cache.clear()
 
+def test_post_run_insights_agent_rate_limit_enforced(hr_client):
+    # _spawn_agent is mocked so the endpoint doesn't start real background threads,
+    # which would run the agent and lock the shared SQLite test database.
+    with patch('api.views.hr.RunInsightsAgentView._spawn_agent') as spawn:
         for _ in range(3):
-            resp = self.client.post('/api/hr/run-insights-agent/')
-            assert resp.status_code == 200
-
-        resp_rate_limit = self.client.post('/api/hr/run-insights-agent/')
-        assert resp_rate_limit.status_code == 429
-        assert mock_spawn.call_count == 3
+            assert hr_client.post('/api/hr/run-insights-agent/').status_code == 200
+        assert hr_client.post('/api/hr/run-insights-agent/').status_code == 429
+    assert spawn.call_count == 3

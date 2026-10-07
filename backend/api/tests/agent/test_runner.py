@@ -3,17 +3,30 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from django.test import TestCase
+import pytest
+from model_bakery import baker
 
 from api.agent import AgentRunner, Tool, get_registry
-from api.models import Report, User
+from api.models import Department, Report, User
 
 
-def _text_block(text):
+@pytest.fixture
+def claude():
+    """The mocked Anthropic client the runner talks to."""
+    with patch('api.agent.runner.Anthropic') as anthropic:
+        yield anthropic.return_value
+
+
+@pytest.fixture
+def hr_manager():
+    return baker.make(User, role=User.Role.HR, position='HR Manager')
+
+
+def _text(text):
     return SimpleNamespace(type='text', text=text)
 
 
-def _tool_use_block(tool_use_id, name, input_data):
+def _tool_use(tool_use_id, name, input_data):
     return SimpleNamespace(type='tool_use', id=tool_use_id, name=name, input=input_data)
 
 
@@ -21,218 +34,149 @@ def _response(stop_reason, content):
     return SimpleNamespace(stop_reason=stop_reason, content=content)
 
 
-class AgentRunnerLoopTests(TestCase):
-    def setUp(self):
-        self.ceo = User.objects.create_user(
-            username='ceo-loop',
-            email='ceo-loop@example.com',
-            role=User.Role.CEO,
-        )
-        self.hr_manager = User.objects.create_user(
-            username='hr-manager-loop',
-            email='hr-manager-loop@example.com',
-            role=User.Role.HR,
-            position='HR Manager',
-        )
+# ── Agent loop ───────────────────────────────────────────────────────────────
 
-        self.report = Report.objects.create(
-            name='HR Headcount',
-            slug='hr-headcount-runner',
-            category='HR',
-            period='May 2026',
-        )
 
-    @patch('api.agent.runner.Anthropic')
-    def test_run_end_turn_returns_text_immediately(self, mock_anthropic):
-        client = mock_anthropic.return_value
-        client.messages.create.return_value = _response(
-            'end_turn',
-            [_text_block('final answer')],
-        )
+def test_run_end_turn_returns_text_immediately(claude, ceo_user):
+    claude.messages.create.return_value = _response('end_turn', [_text('final answer')])
 
-        runner = AgentRunner(self.ceo)
-        result = runner.run('hello')
+    result = AgentRunner(ceo_user).run('hello')
 
-        assert result['response'] == 'final answer'
-        assert result['tool_calls_made'] == []
-        client.messages.create.assert_called_once()
+    assert result['response'] == 'final answer'
+    assert result['tool_calls_made'] == []
+    claude.messages.create.assert_called_once()
 
-    @patch('api.agent.runner.Anthropic')
-    def test_run_tool_use_response_triggers_tool_execution_and_loops(self, mock_anthropic):
-        calls = []
 
-        def summarize(module: str, user: User):
-            calls.append((module, user.username))
-            return {'module': module, 'role': user.role}
+def test_run_tool_use_response_triggers_tool_execution_and_loops(claude, ceo_user):
+    calls = []
 
-        tool = Tool.from_callable(summarize, name='get_dashboard_summary')
-        client = mock_anthropic.return_value
-        client.messages.create.side_effect = [
-            _response('tool_use', [_tool_use_block('tool-1', 'get_dashboard_summary', {'module': 'sales'})]),
-            _response('end_turn', [_text_block('sales summary ready')]),
-        ]
+    def summarize(module: str, user: User):
+        calls.append((module, user.username))
+        return {'module': module, 'role': user.role}
 
-        runner = AgentRunner(self.ceo, tools=[tool])
-        result = runner.run('summarize sales')
+    claude.messages.create.side_effect = [
+        _response('tool_use', [_tool_use('tool-1', 'get_dashboard_summary', {'module': 'sales'})]),
+        _response('end_turn', [_text('sales summary ready')]),
+    ]
 
-        assert result['response'] == 'sales summary ready'
-        assert calls == [('sales', 'ceo-loop')]
-        assert len(result['tool_calls_made']) == 1
-        assert result['tool_calls_made'][0]['tool_name'] == 'get_dashboard_summary'
-        assert result['tool_calls_made'][0]['error'] is None
-        assert 'module' in result['tool_calls_made'][0]['result']
-        assert client.messages.create.call_count == 2
+    result = AgentRunner(ceo_user, tools=[Tool.from_callable(summarize, name='get_dashboard_summary')]).run(
+        'summarize sales'
+    )
 
-        second_call_messages = client.messages.create.call_args_list[1].kwargs['messages']
-        assert second_call_messages[-1]['role'] == 'user'
-        assert second_call_messages[-1]['content'][0]['type'] == 'tool_result'
-        assert not second_call_messages[-1]['content'][0]['is_error']
+    assert result['response'] == 'sales summary ready'
+    assert calls == [('sales', ceo_user.username)]
+    [tool_call] = result['tool_calls_made']
+    assert tool_call['tool_name'] == 'get_dashboard_summary'
+    assert tool_call['error'] is None
+    assert 'module' in tool_call['result']
+    assert claude.messages.create.call_count == 2
+    tool_result = claude.messages.create.call_args_list[1].kwargs['messages'][-1]
+    assert tool_result['role'] == 'user'
+    assert tool_result['content'][0]['type'] == 'tool_result'
+    assert not tool_result['content'][0]['is_error']
 
-    def test_get_system_prompt_includes_report_catalog_for_manager(self):
-        runner = AgentRunner(self.hr_manager)
 
-        prompt = runner.get_system_prompt()
+def test_run_multiple_sequential_tool_calls_resolved_correctly(claude, ceo_user):
+    execution_order = []
 
-        assert 'Available report slugs:' in prompt
-        assert 'hr-headcount-runner (HR Headcount)' in prompt
+    def first_tool(user: User, value: str):
+        execution_order.append(('first', value))
+        return f'first:{value}'
 
-    def test_get_system_prompt_includes_user_full_name(self):
-        user = User.objects.create_user(
-            username='ana-mihai',
-            email='ana@example.com',
-            role=User.Role.HR,
-            first_name='Ana',
-            last_name='Mihai',
-        )
-        runner = AgentRunner(user)
+    def second_tool(user: User, value: str):
+        execution_order.append(('second', value))
+        return f'second:{value}'
 
-        prompt = runner.get_system_prompt()
+    claude.messages.create.side_effect = [
+        _response('tool_use', [_tool_use('tool-1', 'first_tool', {'value': 'one'})]),
+        _response('tool_use', [_tool_use('tool-2', 'second_tool', {'value': 'two'})]),
+        _response('end_turn', [_text('all done')]),
+    ]
+    runner = AgentRunner(
+        ceo_user,
+        tools=[Tool.from_callable(first_tool, name='first_tool'), Tool.from_callable(second_tool, name='second_tool')],
+    )
 
-        assert 'Ana Mihai' in prompt
+    result = runner.run('do the sequence')
 
-    def test_get_system_prompt_falls_back_to_username_when_no_name(self):
-        runner = AgentRunner(self.ceo)
+    assert result['response'] == 'all done'
+    assert execution_order == [('first', 'one'), ('second', 'two')]
+    assert [item['tool_name'] for item in result['tool_calls_made']] == ['first_tool', 'second_tool']
+    assert claude.messages.create.call_count == 3
 
-        prompt = runner.get_system_prompt()
 
-        assert 'ceo-loop' in prompt
+def test_run_max_iterations_reached_returns_fallback_message(claude, ceo_user):
+    runner = AgentRunner(ceo_user, tools=[Tool.from_callable(lambda value: value, name='loop_tool')])
+    runner.MAX_ITERATIONS = 2
+    claude.messages.create.side_effect = [
+        _response('tool_use', [_tool_use('tool-1', 'loop_tool', {'value': 'first'})]),
+        _response('tool_use', [_tool_use('tool-2', 'loop_tool', {'value': 'second'})]),
+    ]
 
-    def test_get_system_prompt_includes_current_page(self):
-        runner = AgentRunner(self.ceo, current_page='/sales/orders')
+    result = runner.run('keep going')
 
-        prompt = runner.get_system_prompt()
+    assert 'could not complete' in result['response']
+    assert len(result['tool_calls_made']) == 2
+    assert claude.messages.create.call_count == 2
 
-        assert '/sales/orders' in prompt
 
-    def test_get_system_prompt_omits_page_line_when_not_provided(self):
-        runner = AgentRunner(self.ceo)
+def test_run_tool_raises_exception_error_captured_in_tool_result(claude, ceo_user):
+    def explode(user: User, value: str):
+        raise RuntimeError('boom')
 
-        prompt = runner.get_system_prompt()
+    claude.messages.create.side_effect = [
+        _response('tool_use', [_tool_use('tool-1', 'explode_tool', {'value': 'x'})]),
+        _response('end_turn', [_text('handled')]),
+    ]
 
-        assert 'Current page:' not in prompt
+    result = AgentRunner(ceo_user, tools=[Tool.from_callable(explode, name='explode_tool')]).run('break it')
 
-    def test_get_system_prompt_includes_position_when_set(self):
-        runner = AgentRunner(self.hr_manager)
+    assert result['response'] == 'handled'
+    assert [call['error'] for call in result['tool_calls_made']] == ['boom']
+    tool_result = claude.messages.create.call_args_list[1].kwargs['messages'][-1]['content'][0]
+    assert tool_result['is_error']
+    assert 'boom' in tool_result['content']
 
-        prompt = runner.get_system_prompt()
 
-        assert 'HR Manager' in prompt
+# ── System prompt and tool selection ─────────────────────────────────────────
 
-    def test_get_system_prompt_includes_department_when_set(self):
-        from api.models import Department
 
-        dept = Department.objects.create(name='Human Resources', slug='hr-dept')
-        user = User.objects.create_user(
-            username='hr-dept-user',
-            email='hr-dept@example.com',
-            role=User.Role.HR,
-            department=dept,
-        )
-        runner = AgentRunner(user)
+def test_get_system_prompt_includes_report_catalog_for_manager(hr_manager):
+    baker.make(Report, name='HR Headcount', slug='hr-headcount-runner', category='HR')
 
-        prompt = runner.get_system_prompt()
+    prompt = AgentRunner(hr_manager).get_system_prompt()
 
-        assert 'Human Resources' in prompt
+    assert 'Available report slugs:' in prompt
+    assert 'hr-headcount-runner (HR Headcount)' in prompt
 
-    def test_get_tools_for_user_includes_generate_report_for_manager(self):
-        runner = AgentRunner(self.hr_manager, tools=get_registry().get_all())
 
-        tool_names = [tool.name for tool in runner.get_tools_for_user()]
+def test_get_system_prompt_includes_user_full_name():
+    user = baker.make(User, role=User.Role.HR, first_name='Ana', last_name='Mihai')
+    assert 'Ana Mihai' in AgentRunner(user).get_system_prompt()
 
-        assert 'generate_report' in tool_names
 
-    @patch('api.agent.runner.Anthropic')
-    def test_run_multiple_sequential_tool_calls_resolved_correctly(self, mock_anthropic):
-        execution_order = []
+def test_get_system_prompt_falls_back_to_username_when_no_name():
+    user = baker.make(User, role=User.Role.CEO, username='ceo-loop', first_name='', last_name='')
+    assert 'ceo-loop' in AgentRunner(user).get_system_prompt()
 
-        def first_tool(user: User, value: str):
-            execution_order.append(('first', value))
-            return f'first:{value}'
 
-        def second_tool(user: User, value: str):
-            execution_order.append(('second', value))
-            return f'second:{value}'
+def test_get_system_prompt_includes_current_page(ceo_user):
+    assert '/sales/orders' in AgentRunner(ceo_user, current_page='/sales/orders').get_system_prompt()
 
-        runner = AgentRunner(
-            self.ceo,
-            tools=[
-                Tool.from_callable(first_tool, name='first_tool'),
-                Tool.from_callable(second_tool, name='second_tool'),
-            ],
-        )
 
-        client = mock_anthropic.return_value
-        client.messages.create.side_effect = [
-            _response('tool_use', [_tool_use_block('tool-1', 'first_tool', {'value': 'one'})]),
-            _response('tool_use', [_tool_use_block('tool-2', 'second_tool', {'value': 'two'})]),
-            _response('end_turn', [_text_block('all done')]),
-        ]
+def test_get_system_prompt_omits_page_line_when_not_provided(ceo_user):
+    assert 'Current page:' not in AgentRunner(ceo_user).get_system_prompt()
 
-        result = runner.run('do the sequence')
 
-        assert result['response'] == 'all done'
-        assert execution_order == [('first', 'one'), ('second', 'two')]
-        assert [item['tool_name'] for item in result['tool_calls_made']] == ['first_tool', 'second_tool']
-        assert client.messages.create.call_count == 3
+def test_get_system_prompt_includes_position_when_set(hr_manager):
+    assert 'HR Manager' in AgentRunner(hr_manager).get_system_prompt()
 
-    @patch('api.agent.runner.Anthropic')
-    def test_run_max_iterations_reached_returns_fallback_message(self, mock_anthropic):
-        runner = AgentRunner(
-            self.ceo,
-            tools=[Tool.from_callable(lambda value: value, name='loop_tool')],
-        )
-        runner.MAX_ITERATIONS = 2
 
-        client = mock_anthropic.return_value
-        client.messages.create.side_effect = [
-            _response('tool_use', [_tool_use_block('tool-1', 'loop_tool', {'value': 'first'})]),
-            _response('tool_use', [_tool_use_block('tool-2', 'loop_tool', {'value': 'second'})]),
-        ]
+def test_get_system_prompt_includes_department_when_set():
+    user = baker.make(User, role=User.Role.HR, department=baker.make(Department, name='Human Resources'))
+    assert 'Human Resources' in AgentRunner(user).get_system_prompt()
 
-        result = runner.run('keep going')
 
-        assert 'could not complete' in result['response']
-        assert len(result['tool_calls_made']) == 2
-        assert client.messages.create.call_count == 2
-
-    @patch('api.agent.runner.Anthropic')
-    def test_run_tool_raises_exception_error_captured_in_tool_result(self, mock_anthropic):
-        def explode(user: User, value: str):
-            raise RuntimeError('boom')
-
-        runner = AgentRunner(self.ceo, tools=[Tool.from_callable(explode, name='explode_tool')])
-        client = mock_anthropic.return_value
-        client.messages.create.side_effect = [
-            _response('tool_use', [_tool_use_block('tool-1', 'explode_tool', {'value': 'x'})]),
-            _response('end_turn', [_text_block('handled')]),
-        ]
-
-        result = runner.run('break it')
-
-        assert result['response'] == 'handled'
-        assert len(result['tool_calls_made']) == 1
-        assert result['tool_calls_made'][0]['error'] == 'boom'
-
-        second_call_messages = client.messages.create.call_args_list[1].kwargs['messages']
-        assert second_call_messages[-1]['content'][0]['is_error']
-        assert 'boom' in second_call_messages[-1]['content'][0]['content']
+def test_get_tools_for_user_includes_generate_report_for_manager(hr_manager):
+    runner = AgentRunner(hr_manager, tools=get_registry().get_all())
+    assert 'generate_report' in [tool.name for tool in runner.get_tools_for_user()]

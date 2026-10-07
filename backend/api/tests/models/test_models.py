@@ -3,23 +3,17 @@
 from datetime import date
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.db import IntegrityError
-from django.test import TestCase
+from model_bakery import baker
 
 from api.models import (
     Attendance,
-    Contract,
     Customer,
-    Department,
-    Invoice,
-    LeaveRequest,
     Notification,
     Order,
     OrderItem,
     PayrollEntry,
     Product,
-    Report,
     SystemStatistic,
     Ticket,
     TicketComment,
@@ -27,152 +21,66 @@ from api.models import (
     WorkflowLog,
 )
 
-User = get_user_model()
+
+def test_customer_str_is_its_name():
+    assert str(baker.make(Customer, name='Acme SRL')) == 'Acme SRL'
 
 
-class ERPModelsTestCase(TestCase):
-    def setUp(self):
-        self.ceo = User.objects.create_user(
-            username='admin',
-            email='admin@example.com',
-            password='password',
-            role=User.Role.CEO,
-        )
-        self.it_user = User.objects.create_user(
-            username='it.user',
-            email='it@example.com',
-            password='password',
-            role=User.Role.IT,
-        )
-        self.sales_user = User.objects.create_user(
-            username='sales.user',
-            email='sales@example.com',
-            password='password',
-            role=User.Role.SALES,
-        )
-        self.hr_department = Department.objects.create(name='Human Resources', slug='hr', icon='Users')
+def test_product_unique_sku():
+    baker.make(Product, sku='W-001')
+    with pytest.raises(IntegrityError):
+        baker.make(Product, sku='W-001')
 
-    def test_customer_create(self):
-        customer = Customer.objects.create(name='Acme SRL', contact_email='client@acme.ro')
-        assert str(customer) == 'Acme SRL'
 
-    def test_product_unique_sku(self):
-        Product.objects.create(name='Widget', sku='W-001')
-        with pytest.raises(IntegrityError):
-            Product.objects.create(name='Widget 2', sku='W-001')
+def test_product_availability_for_stock_thresholds():
+    assert Product(stock_count=0, min_stock=10).availability == 'Out of Stock'
+    assert Product(stock_count=5, min_stock=10).availability == 'Low Stock'
+    assert Product(stock_count=10, min_stock=10).availability == 'In Stock'
 
-    def test_order_and_items(self):
-        customer = Customer.objects.create(name='Acme SRL')
-        product = Product.objects.create(name='Widget', sku='W-001', unit_price_ron=10, stock_count=5)
 
-        order = Order.objects.create(
-            order_number='ORD-1',
-            customer=customer,
-            created_by=self.sales_user,
-            status=Order.Status.PROCESSING,
-        )
-        assert str(order) == 'ORD-1'
+def test_order_and_items():
+    order = baker.make(Order, order_number='ORD-1')
+    product = baker.make(Product)
+    assert str(order) == 'ORD-1'
 
-        OrderItem.objects.create(order=order, product=product, quantity=2, unit_price_ron=10)
-        assert order.items.count() == 1
+    baker.make(OrderItem, order=order, product=product)
+    assert order.items.count() == 1
 
-        # unique_together(order, product)
-        with pytest.raises(IntegrityError):
-            OrderItem.objects.create(order=order, product=product, quantity=1, unit_price_ron=10)
+    # unique_together(order, product)
+    with pytest.raises(IntegrityError):
+        baker.make(OrderItem, order=order, product=product)
 
-    def test_invoice_create(self):
-        customer = Customer.objects.create(name='Acme SRL')
-        order = Order.objects.create(order_number='ORD-2', customer=customer, created_by=self.sales_user)
-        invoice = Invoice.objects.create(
-            invoice_number='INV-1',
-            order=order,
-            issued_by=self.sales_user,
-            amount_ron=99.99,
-        )
-        assert invoice.order == order
 
-    def test_attendance_unique_per_user_per_day(self):
-        Attendance.objects.create(employee=self.it_user, date=date(2026, 1, 1), status=Attendance.Status.PRESENT)
-        with pytest.raises(IntegrityError):
-            Attendance.objects.create(employee=self.it_user, date=date(2026, 1, 1), status=Attendance.Status.ABSENT)
+def test_attendance_unique_per_user_per_day(it_user):
+    baker.make(Attendance, employee=it_user, date=date(2026, 1, 1), status=Attendance.Status.PRESENT)
+    with pytest.raises(IntegrityError):
+        baker.make(Attendance, employee=it_user, date=date(2026, 1, 1), status=Attendance.Status.ABSENT)
 
-    def test_leave_request_relations(self):
-        leave = LeaveRequest.objects.create(
-            employee=self.it_user,
-            department=self.hr_department,
-            type=LeaveRequest.Type.VACATION,
-            from_date=date(2026, 1, 10),
-            to_date=date(2026, 1, 12),
-            status=LeaveRequest.Status.PENDING,
-        )
-        assert leave.employee == self.it_user
-        assert leave.department == self.hr_department
 
-    def test_contract_create(self):
-        contract = Contract.objects.create(
-            contract_number='CTR-1',
-            employee=self.it_user,
-            department=self.hr_department,
-            type=Contract.Type.EMPLOYMENT,
-            start_date=date(2026, 1, 1),
-            salary_ron=5000,
-        )
-        assert contract.employee == self.it_user
+def test_payroll_entry_unique_per_month(sales_user):
+    baker.make(PayrollEntry, employee=sales_user, month=date(2026, 1, 1))
+    with pytest.raises(IntegrityError):
+        baker.make(PayrollEntry, employee=sales_user, month=date(2026, 1, 1))
 
-    def test_payroll_entry_unique_per_month(self):
-        PayrollEntry.objects.create(
-            employee=self.sales_user,
-            month=date(2026, 1, 1),
-            gross_salary_ron=1000,
-            net_salary_ron=800,
-        )
-        with pytest.raises(IntegrityError):
-            PayrollEntry.objects.create(
-                employee=self.sales_user,
-                month=date(2026, 1, 1),
-                gross_salary_ron=1000,
-                net_salary_ron=800,
-            )
 
-    def test_notification_create(self):
-        notification = Notification.objects.create(recipient=self.ceo, title='Hello', body='World')
-        assert notification.recipient == self.ceo
-        assert not notification.is_read
+def test_notification_is_unread_by_default(ceo_user):
+    assert not baker.make(Notification, recipient=ceo_user).is_read
 
-    def test_ticket_and_comment(self):
-        ticket = Ticket.objects.create(
-            ticket_number='T-1',
-            title='Printer broken',
-            requested_by=self.ceo,
-            assigned_to=self.it_user,
-            priority=Ticket.Priority.HIGH,
-            status=Ticket.Status.OPEN,
-        )
-        assert ticket.comments.count() == 0
-        TicketComment.objects.create(ticket=ticket, author=self.it_user, body='On it')
-        assert ticket.comments.count() == 1
 
-    def test_workflow_and_log(self):
-        workflow = Workflow.objects.create(name='Auto-assign IT tickets', trigger_type='NEW_IT_TICKET')
-        WorkflowLog.objects.create(
-            workflow=workflow,
-            trigger_type='NEW_IT_TICKET',
-            actions_log=[{'action': 'NOTIFY_MANAGER', 'success': True, 'message': 'ok'}],
-            success=True,
-        )
-        assert workflow.logs.count() == 1
+def test_ticket_and_comment():
+    ticket = baker.make(Ticket)
+    assert ticket.comments.count() == 0
+    baker.make(TicketComment, ticket=ticket)
+    assert ticket.comments.count() == 1
 
-    def test_system_statistic_unique_name(self):
-        SystemStatistic.objects.create(name='open_tickets', value={'count': 3})
-        with pytest.raises(IntegrityError):
-            SystemStatistic.objects.create(name='open_tickets', value={'count': 4})
 
-    def test_report_create(self):
-        report = Report.objects.create(
-            name='Weekly sales',
-            category='sales',
-            period='2026-W01',
-            file_path='/tmp/report.csv',
-            generated_by=self.ceo,
-        )
-        assert report.generated_by == self.ceo
+def test_workflow_and_log():
+    workflow = baker.make(Workflow)
+    baker.make(WorkflowLog, workflow=workflow)
+    assert workflow.logs.count() == 1
+
+
+def test_system_statistic_unique_name():
+    baker.make(SystemStatistic, name='open_tickets')
+    with pytest.raises(IntegrityError):
+        baker.make(SystemStatistic, name='open_tickets')

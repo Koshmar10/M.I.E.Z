@@ -5,6 +5,7 @@ setting only the fields the test is about.
 """
 
 import pytest
+from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from api.models import User
@@ -13,6 +14,12 @@ from api.models import User
 @pytest.fixture(autouse=True)
 def _db(db):
     """Give every test database access."""
+
+
+@pytest.fixture(autouse=True)
+def _empty_cache():
+    """Rate limits live in the cache; start every test without any."""
+    cache.clear()
 
 
 def _user(role: str) -> User:

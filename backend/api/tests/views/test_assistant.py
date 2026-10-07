@@ -3,7 +3,6 @@
 from unittest.mock import patch
 
 import pytest
-from django.core.cache import cache
 
 from api.agent.runner import AgentRunner
 
@@ -12,8 +11,7 @@ URL = '/api/assistant/chat/'
 
 @pytest.fixture(autouse=True)
 def fake_anthropic():
-    """Never call the real Claude API, and start every test with an empty rate-limit cache."""
-    cache.clear()
+    """Never call the real Claude API."""
     reply = {'response': 'mocked anthropic response', 'tool_calls_made': []}
     with patch.object(AgentRunner, '_call_anthropic', return_value=reply):
         yield

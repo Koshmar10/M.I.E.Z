@@ -2,7 +2,6 @@
 
 import datetime
 
-import pytest
 from django.utils import timezone
 from model_bakery import baker
 
@@ -15,18 +14,15 @@ from api.agent.operations import (
 )
 from api.models import Attendance, Contract, LeaveRequest, Order, PayrollEntry, StockMovement, Ticket, User
 
-pytestmark = pytest.mark.django_db
-
 
 def _iso_monday(value: datetime.date) -> datetime.date:
     return value - datetime.timedelta(days=value.weekday())
 
 
-def test_get_attendance_trend_calculates_pct_and_flags_departments_below_85():
+def test_get_attendance_trend_calculates_pct_and_flags_departments_below_85(hr_user):
     today = timezone.localdate()
     week_start = _iso_monday(today)
 
-    hr_user = baker.make(User, role=User.Role.HR)
     sales_dept = baker.make('api.Department', name='Sales', slug='sales')
     hr_dept = baker.make('api.Department', name='HR', slug='hr')
 
@@ -76,11 +72,10 @@ def test_get_attendance_trend_calculates_pct_and_flags_departments_below_85():
     assert hr_row['flag_low_attendance'] is False
 
 
-def test_get_attendance_trend_marks_employee_with_3_absences_in_4_weeks():
+def test_get_attendance_trend_marks_employee_with_3_absences_in_4_weeks(hr_user):
     today = timezone.localdate()
     current_week_start = _iso_monday(today)
 
-    hr_user = baker.make(User, role=User.Role.HR)
     hr_dept = baker.make('api.Department', name='Human Resources', slug='human-resources')
     employee = baker.make(User, role=User.Role.HR, department=hr_dept, first_name='Ana', last_name='Pop')
 
@@ -116,10 +111,9 @@ def test_get_attendance_trend_marks_employee_with_3_absences_in_4_weeks():
     assert flagged_absence['flag_repeated_absence'] is True
 
 
-def test_get_expiring_contracts_returns_only_contracts_within_60_days():
+def test_get_expiring_contracts_returns_only_contracts_within_60_days(hr_user):
     today = timezone.localdate()
 
-    hr_user = baker.make(User, role=User.Role.HR)
     dept = baker.make('api.Department', name='IT', slug='it')
     employee_in_window = baker.make(User, role=User.Role.IT, department=dept, first_name='Ana', last_name='Pop')
     employee_outside_window = baker.make(User, role=User.Role.IT, department=dept)
@@ -145,10 +139,9 @@ def test_get_expiring_contracts_returns_only_contracts_within_60_days():
     assert results[0]['employee_name'] == 'Ana Pop'
 
 
-def test_get_expiring_contracts_sets_has_open_tickets_when_employee_has_non_resolved_tickets():
+def test_get_expiring_contracts_sets_has_open_tickets_when_employee_has_non_resolved_tickets(hr_user):
     today = timezone.localdate()
 
-    hr_user = baker.make(User, role=User.Role.HR)
     dept = baker.make('api.Department', name='IT Ops', slug='it-ops')
     employee = baker.make(User, role=User.Role.IT, department=dept, first_name='Mihai', last_name='Ionescu')
 
@@ -173,11 +166,10 @@ def test_get_expiring_contracts_sets_has_open_tickets_when_employee_has_non_reso
     assert results[0]['has_open_tickets'] is True
 
 
-def test_get_payroll_anomalies_flags_bonus_over_2x_average():
+def test_get_payroll_anomalies_flags_bonus_over_2x_average(hr_user):
     today = timezone.localdate()
     month_start = today.replace(day=1)
 
-    hr_user = baker.make(User, role=User.Role.HR)
     employee = baker.make(User, role=User.Role.SALES, first_name='Andrei', last_name='Marin')
 
     baker.make(
@@ -201,11 +193,10 @@ def test_get_payroll_anomalies_flags_bonus_over_2x_average():
     assert any(item['anomaly_type'] == 'bonus_spike' and item['employee_name'] == 'Andrei Marin' for item in anomalies)
 
 
-def test_get_payroll_anomalies_flags_employee_missing_from_current_month():
+def test_get_payroll_anomalies_flags_employee_missing_from_current_month(hr_user):
     today = timezone.localdate()
     month_start = today.replace(day=1)
 
-    hr_user = baker.make(User, role=User.Role.HR)
     present_employee = baker.make(User, role=User.Role.HR, first_name='Present', last_name='Employee')
     baker.make(User, role=User.Role.HR, first_name='Missing', last_name='Employee')
 
@@ -221,11 +212,10 @@ def test_get_payroll_anomalies_flags_employee_missing_from_current_month():
     )
 
 
-def test_get_payroll_anomalies_does_not_flag_bonus_within_20_percent_of_average():
+def test_get_payroll_anomalies_does_not_flag_bonus_within_20_percent_of_average(hr_user):
     today = timezone.localdate()
     month_start = today.replace(day=1)
 
-    hr_user = baker.make(User, role=User.Role.HR)
     employee = baker.make(User, role=User.Role.SALES, first_name='Calm', last_name='Bonus')
 
     baker.make(
@@ -251,10 +241,9 @@ def test_get_payroll_anomalies_does_not_flag_bonus_within_20_percent_of_average(
     )
 
 
-def test_get_leave_patterns_detects_monday_friday_pattern_after_3_occurrences():
+def test_get_leave_patterns_detects_monday_friday_pattern_after_3_occurrences(hr_user):
     today = timezone.localdate()
 
-    hr_user = baker.make(User, role=User.Role.HR)
     dept = baker.make('api.Department', name='People', slug='people')
     employee = baker.make(User, role=User.Role.HR, department=dept, first_name='Ioana', last_name='Radu')
 
@@ -302,10 +291,8 @@ def test_get_leave_patterns_detects_monday_friday_pattern_after_3_occurrences():
     assert pattern['occurrences'] == 3
 
 
-def test_get_headcount_vs_workload_computes_ratio_per_department():
+def test_get_headcount_vs_workload_computes_ratio_per_department(hr_user):
     today = timezone.localdate()
-
-    hr_user = baker.make(User, role=User.Role.HR)
 
     baker.make(User, role=User.Role.SALES, is_active=True)
     baker.make(User, role=User.Role.SALES, is_active=True)
@@ -339,8 +326,7 @@ def test_get_headcount_vs_workload_computes_ratio_per_department():
     assert inventory_row['ratio'] == 4.0
 
 
-def test_get_headcount_vs_workload_sets_status_when_ratio_exceeds_threshold():
-    hr_user = baker.make(User, role=User.Role.HR)
+def test_get_headcount_vs_workload_sets_status_when_ratio_exceeds_threshold(hr_user):
     baker.make(User, role=User.Role.SALES, is_active=True)
 
     customer = baker.make('api.Customer')

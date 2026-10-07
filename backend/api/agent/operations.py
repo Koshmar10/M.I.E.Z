@@ -34,6 +34,9 @@ from api.models import (
     User,
 )
 from api.report_utils import generate_report_file
+from api.services import hr as hr_services
+from api.services import it as it_services
+from api.services import sales as sales_services
 
 from .tools import Tool, agent_tool, get_registry, register_tool
 
@@ -1370,14 +1373,8 @@ def query_invoices(
 def update_order_status(user: User, order_number: str, status: str) -> dict[str, Any]:
     _require_roles(user, [User.Role.CEO, User.Role.SALES], 'Only CEO and Sales can update orders.')
 
-    status_name = (status or '').strip().upper()
-    valid_statuses = {choice[0] for choice in Order.Status.choices}
-    if status_name not in valid_statuses:
-        raise ValueError(f'Unsupported order status: {status}')
-
     order = Order.objects.select_related('customer').get(order_number=order_number)
-    order.status = status_name
-    order.save(update_fields=['status', 'updated_at'])
+    sales_services.change_order_status(order, (status or '').strip().upper())
     return {'order_number': order.order_number, 'status': order.status}
 
 
@@ -1396,8 +1393,7 @@ def mark_invoice_paid(user: User, invoice_number: str) -> dict[str, Any]:
     _require_roles(user, [User.Role.CEO, User.Role.SALES], 'Only CEO and Sales can update invoices.')
 
     invoice = Invoice.objects.get(invoice_number=invoice_number)
-    invoice.status = Invoice.Status.PAID
-    invoice.save(update_fields=['status', 'updated_at'])
+    sales_services.mark_invoice_paid(invoice)
     return {'invoice_number': invoice.invoice_number, 'status': invoice.status}
 
 
@@ -1580,23 +1576,18 @@ def update_ticket_status(
 ) -> dict[str, Any]:
     _require_roles(user, [User.Role.CEO, User.Role.IT], 'Only CEO and IT can update tickets.')
 
-    status_name = (status or '').strip().upper()
-    valid_statuses = {choice[0] for choice in Ticket.Status.choices}
-    if status_name not in valid_statuses:
-        raise ValueError(f'Unsupported ticket status: {status}')
-
     ticket = Ticket.objects.get(ticket_number=ticket_number)
-    ticket.status = status_name
 
+    assignee = None
     if assigned_to is not None:
         if isinstance(assigned_to, int) or (isinstance(assigned_to, str) and assigned_to.isdigit()):
-            ticket.assigned_to = User.objects.get(id=int(assigned_to))
+            assignee = User.objects.get(id=int(assigned_to))
         elif isinstance(assigned_to, str):
-            ticket.assigned_to = User.objects.get(username=assigned_to)
+            assignee = User.objects.get(username=assigned_to)
         else:
             raise ValueError('assigned_to must be a user id or username')
 
-    ticket.save()
+    it_services.change_ticket_status(ticket, (status or '').strip().upper(), actor=user, assigned_to=assignee)
     return {
         'ticket_number': ticket.ticket_number,
         'status': ticket.status,
@@ -1649,20 +1640,11 @@ def decide_leave_request(user: User, leave_request_id: int, decision: str) -> di
     _require_roles(user, [User.Role.CEO, User.Role.HR], 'Only CEO and HR can decide leave requests.')
 
     decision_name = (decision or '').strip().lower()
-    decision_map = {
-        'approve': LeaveRequest.Status.APPROVED,
-        'reject': LeaveRequest.Status.REJECTED,
-    }
-    if decision_name not in decision_map:
+    if decision_name not in ('approve', 'reject'):
         raise ValueError("decision must be 'approve' or 'reject'.")
 
     leave_request = LeaveRequest.objects.select_related('employee').get(id=int(leave_request_id))
-    if leave_request.status != LeaveRequest.Status.PENDING:
-        raise ValueError(f'Leave request {leave_request_id} is not pending (current status: {leave_request.status}).')
-
-    leave_request.status = decision_map[decision_name]
-    leave_request.approved_by = user
-    leave_request.save(update_fields=['status', 'approved_by', 'updated_at'])
+    hr_services.decide_leave_request(leave_request, approve=decision_name == 'approve', actor=user)
     return {
         'id': leave_request.id,
         'status': leave_request.status,

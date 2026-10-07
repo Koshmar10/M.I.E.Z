@@ -46,6 +46,7 @@ backend/api/
   views/         one module per domain area: auth, employees, hr, it, inventory, sales,
                  reports, assistant, workflows, notifications (+ legacy)
   serializers/   one module per domain area, mirroring views/
+  services/      business rules (status transitions, decisions); used by views AND agent tools
   urls.py        all /api/ routes, grouped by domain
   agent/         the AI assistant (runner, tools, operations)
   management/commands/   CLI jobs (seed_db, run_workflows, run_hr_agent, …)
@@ -54,6 +55,7 @@ backend/api/
 - New endpoint: put the view in the matching `views/<domain>.py`, its serializers in `serializers/<domain>.py`, and the route in `urls.py` under that domain's comment. Create a new domain module only for a genuinely new area.
 - Views import serializers from their domain module (`from ..serializers.sales import OrderListSerializer`), and models from the package (`from ..models import Order`).
 - A view module must not import from another view module. Shared logic goes into a helper module, not into a view file.
+- **Business rules live in `api/services/<domain>.py`, never in views, serializers or agent tools.** Anything that changes the state of a business object (order status, ticket status, leave decisions, …) must call the service function. The UI and the AI assistant then always follow the same rules. Services raise `BusinessRuleError`, and views return it as HTTP 400 with `{'detail': str(exc)}`.
 
 ## Backend — Implementation Rules
 

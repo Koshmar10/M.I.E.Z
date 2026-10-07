@@ -37,6 +37,8 @@ from ..serializers.sales import (
     OrderListSerializer,
     SalesProductSerializer,
 )
+from ..services import BusinessRuleError
+from ..services.sales import change_order_status, mark_invoice_paid
 
 
 class OrderPagination(PageNumberPagination):
@@ -147,25 +149,10 @@ class OrderDetailView(APIView):
         if not status_value:
             return Response({'detail': 'status is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        valid_statuses = {choice[0] for choice in Order.Status.choices}
-        if status_value not in valid_statuses:
-            return Response({'detail': 'Invalid status value.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        allowed_transitions = {
-            Order.Status.PROCESSING: [Order.Status.SHIPPED, Order.Status.CANCELLED],
-            Order.Status.SHIPPED: [Order.Status.DELIVERED],
-            Order.Status.DELIVERED: [],
-            Order.Status.CANCELLED: [],
-        }
-
-        if status_value != order.status:
-            allowed_next = allowed_transitions.get(order.status, [])
-            if status_value not in allowed_next:
-                return Response({'detail': 'Invalid status transition.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if status_value != order.status:
-            order.status = status_value
-            order.save(update_fields=['status', 'updated_at'])
+        try:
+            change_order_status(order, status_value)
+        except BusinessRuleError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = OrderDetailSerializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -475,9 +462,7 @@ class InvoiceDetailView(APIView):
         if status_value != Invoice.Status.PAID:
             return Response({'detail': 'Only PAID status updates are supported.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if invoice.status != Invoice.Status.PAID:
-            invoice.status = Invoice.Status.PAID
-            invoice.save(update_fields=['status', 'updated_at'])
+        mark_invoice_paid(invoice)
 
         serializer = InvoiceDetailSerializer(invoice)
         return Response(serializer.data, status=status.HTTP_200_OK)

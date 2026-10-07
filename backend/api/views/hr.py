@@ -27,6 +27,8 @@ from ..models import (
 )
 from ..notifications import notify_role
 from ..serializers.reports import ReportSerializer
+from ..services import BusinessRuleError
+from ..services.hr import decide_leave_request
 
 
 class HrDashboardView(APIView):
@@ -499,9 +501,10 @@ class LeaveRequestApproveView(APIView):
             return Response({'detail': 'Only CEO and HR can approve leave requests.'}, status=status.HTTP_403_FORBIDDEN)
 
         leave_request = get_object_or_404(LeaveRequest, id=id)
-        leave_request.status = LeaveRequest.Status.APPROVED
-        leave_request.approved_by = request.user
-        leave_request.save(update_fields=['status', 'approved_by', 'updated_at'])
+        try:
+            decide_leave_request(leave_request, approve=True, actor=request.user)
+        except BusinessRuleError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({'id': leave_request.id, 'status': leave_request.status}, status=status.HTTP_200_OK)
 
@@ -514,9 +517,10 @@ class LeaveRequestRejectView(APIView):
             return Response({'detail': 'Only CEO and HR can reject leave requests.'}, status=status.HTTP_403_FORBIDDEN)
 
         leave_request = get_object_or_404(LeaveRequest, id=id)
-        leave_request.status = LeaveRequest.Status.REJECTED
-        leave_request.approved_by = request.user
-        leave_request.save(update_fields=['status', 'approved_by', 'updated_at'])
+        try:
+            decide_leave_request(leave_request, approve=False, actor=request.user)
+        except BusinessRuleError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({'id': leave_request.id, 'status': leave_request.status}, status=status.HTTP_200_OK)
 

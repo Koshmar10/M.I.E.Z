@@ -8,6 +8,8 @@ from ..models import (
     Ticket,
     User,
 )
+from ..services import BusinessRuleError
+from ..services.it import change_ticket_status, check_ticket_transition
 
 
 class AssetSerializer(serializers.ModelSerializer):
@@ -118,33 +120,25 @@ class TicketUpdateSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'resolved_at']
 
     def validate_status(self, value):
-        if self.instance is None:
-            return value
-
-        current = self.instance.status
-        allowed_transitions = {
-            Ticket.Status.OPEN: [Ticket.Status.IN_PROGRESS],
-            Ticket.Status.IN_PROGRESS: [Ticket.Status.RESOLVED],
-            Ticket.Status.RESOLVED: [],
-            Ticket.Status.CLOSED: [],
-        }
-
-        if value == current:
-            return value
-
-        if value not in allowed_transitions.get(current, []):
-            raise serializers.ValidationError(f'Invalid transition from {current} to {value}.')
-
+        if self.instance is not None:
+            try:
+                check_ticket_transition(self.instance.status, value)
+            except BusinessRuleError as exc:
+                raise serializers.ValidationError(str(exc)) from exc
         return value
 
     def update(self, instance, validated_data):
-        new_status = validated_data.get('status')
-        if new_status == Ticket.Status.IN_PROGRESS and not validated_data.get('assigned_to'):
-            request = self.context.get('request')
-            if request and request.user and request.user.is_authenticated:
-                validated_data['assigned_to'] = request.user
+        if 'status' not in validated_data:
+            return super().update(instance, validated_data)
 
-        return super().update(instance, validated_data)
+        request = self.context.get('request')
+        actor = request.user if request and request.user.is_authenticated else None
+        return change_ticket_status(
+            instance,
+            validated_data['status'],
+            actor=actor,
+            assigned_to=validated_data.get('assigned_to'),
+        )
 
 
 class SystemStatusSerializer(serializers.ModelSerializer):

@@ -1,10 +1,14 @@
-from django.db import models
+import logging
+
+from django.db import models, transaction
 
 from .product import Product
 from .supplier import Supplier
 from .user import User
 from .workflow import Workflow
 from .workflow_log import WorkflowLog
+
+logger = logging.getLogger(__name__)
 
 
 class StockMovement(models.Model):
@@ -30,30 +34,44 @@ class StockMovement(models.Model):
         ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
-        # on create, apply the stock change to the product
+        # A new movement and its effect on the product's stock are saved together, or not at all.
         is_create = self.pk is None
-        super().save(*args, **kwargs)
-        if is_create:
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            stock_before = self._apply_to_product_stock() if is_create else None
+
+        if stock_before is not None and self._reduced_stock(stock_before):
             try:
-                if self.movement_type == StockMovement.Type.INBOUND:
-                    # increment product stock
-                    self.product.stock_count = (getattr(self.product, 'stock_count', 0) or 0) + int(self.quantity)
-                    self.product.save(update_fields=['stock_count'])
-                elif self.movement_type in (StockMovement.Type.OUTBOUND, StockMovement.Type.WRITE_OFF):
-                    # decrement product stock (not below zero)
-                    new_count = max(0, (getattr(self.product, 'stock_count', 0) or 0) - int(self.quantity))
-                    self.product.stock_count = new_count
-                    self.product.save(update_fields=['stock_count'])
-                    self._evaluate_stock_workflows()
-                elif self.movement_type == StockMovement.Type.ADJUSTMENT:
-                    old_count = getattr(self.product, 'stock_count', 0) or 0
-                    self.product.stock_count = int(self.quantity)
-                    self.product.save(update_fields=['stock_count'])
-                    if self.product.stock_count < old_count:
-                        self._evaluate_stock_workflows()
+                self._evaluate_stock_workflows()
             except Exception:
-                # Don't let product save failures block the movement creation; log later if needed
-                pass
+                # The movement is already saved; a failing workflow must not turn it into an error.
+                logger.exception('Stock workflows failed for stock movement %s', self.pk)
+
+    def _apply_to_product_stock(self) -> int:
+        """Apply this movement to the product's stock and return the stock before the change.
+
+        The product row is locked until the transaction ends, so two movements saved
+        at the same time can't overwrite each other's change.
+        """
+        product = Product.objects.select_for_update().get(pk=self.product_id)
+        stock_before = product.stock_count
+        quantity = int(self.quantity)
+
+        if self.movement_type == self.Type.INBOUND:
+            product.stock_count = stock_before + quantity
+        elif self.movement_type in (self.Type.OUTBOUND, self.Type.WRITE_OFF):
+            product.stock_count = max(0, stock_before - quantity)
+        elif self.movement_type == self.Type.ADJUSTMENT:
+            product.stock_count = quantity
+
+        product.save(update_fields=['stock_count'])
+        self.product = product
+        return stock_before
+
+    def _reduced_stock(self, stock_before: int) -> bool:
+        if self.movement_type in (self.Type.OUTBOUND, self.Type.WRITE_OFF):
+            return True
+        return self.movement_type == self.Type.ADJUSTMENT and self.product.stock_count < stock_before
 
     def _evaluate_stock_workflows(self):
         from django.utils import timezone

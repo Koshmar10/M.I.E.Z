@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const UserIcon = () => (
@@ -19,8 +20,9 @@ const LoginPage = () => {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login } = useAuth();
+  const navigate = useNavigate();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -31,10 +33,10 @@ const LoginPage = () => {
 
     setIsSubmitting(true);
     try {
-      await login(username, password); // ← calls context method
+      await login(username, password);
       setUsername('');
       setPassword('');
-      window.location.href = "/";
+      void navigate('/');
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       setErrorMessage(message || 'Invalid username or password.');
@@ -61,7 +63,7 @@ const LoginPage = () => {
         <div className="bg-[var(--card)] rounded-[2rem] shadow-2xl p-8 w-full mb-8">
           <h2 className="text-[var(--foreground)] text-2xl font-bold text-center mb-8">Sign In</h2>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={(e) => void handleLogin(e)} className="space-y-5">
             {errorMessage && (
               <div
                 className="bg-red-50 text-red-700 border border-red-200 rounded-2xl px-4 py-3 text-sm"

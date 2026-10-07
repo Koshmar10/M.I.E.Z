@@ -1,3 +1,5 @@
+import { api } from './client'
+
 export type Workflow = {
   id: number
   name: string
@@ -33,27 +35,14 @@ export type WorkflowPayload = {
   is_active: boolean
 }
 
-const OPTS: RequestInit = { credentials: 'include', headers: { 'Content-Type': 'application/json' } }
-
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { ...OPTS, ...init, headers: { ...OPTS.headers, ...init?.headers } })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail ?? JSON.stringify(err))
-  }
-  if (res.status === 204) return undefined as T
-  return res.json()
-}
-
 export const workflowsApi = {
-  list: ()                           => req<Workflow[]>('/api/workflows/'),
-  create: (data: WorkflowPayload)    => req<Workflow>('/api/workflows/', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: number, data: Partial<WorkflowPayload>) =>
-    req<Workflow>(`/api/workflows/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
-  remove: (id: number)               => req<void>(`/api/workflows/${id}/`, { method: 'DELETE' }),
+  list: () => api.get<Workflow[]>('/api/workflows/'),
+  create: (data: WorkflowPayload) => api.post<Workflow>('/api/workflows/', data),
+  update: (id: number, data: Partial<WorkflowPayload>) => api.patch<Workflow>(`/api/workflows/${id}/`, data),
+  remove: (id: number) => api.delete(`/api/workflows/${id}/`),
   toggle: (id: number, is_active: boolean) =>
-    req<{ id: number; is_active: boolean }>(`/api/workflows/${id}/toggle/`, { method: 'PATCH', body: JSON.stringify({ is_active }) }),
-  triggers: ()                       => req<TriggerOption[]>('/api/workflows/triggers/'),
-  actions: ()                        => req<ActionOption[]>('/api/workflows/actions/'),
-  logs: ()                           => req<WorkflowLog[]>('/api/workflows/logs/'),
+    api.patch<{ id: number; is_active: boolean }>(`/api/workflows/${id}/toggle/`, { is_active }),
+  triggers: () => api.get<TriggerOption[]>('/api/workflows/triggers/'),
+  actions: () => api.get<ActionOption[]>('/api/workflows/actions/'),
+  logs: () => api.get<WorkflowLog[]>('/api/workflows/logs/'),
 }

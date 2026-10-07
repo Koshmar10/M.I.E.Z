@@ -12,7 +12,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from api.management.commands.generate_hr_digest import DigestGenerator
-from api.models import Attendance, Contract, Department, LeaveRequest, Notification, PayrollEntry, Report, User
+from api.models import Contract, Department, LeaveRequest, Notification, PayrollEntry, Report, User
 
 
 class DigestTestCase(APITestCase):
@@ -126,7 +126,6 @@ class TestHrDigestGenerateView(DigestTestCase):
 
         response = hr_client.post('/api/hr/digest/generate/')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertIn('CEO', response.data['detail'])
 
     def test_ceo_can_generate_digest(self):
         response = self.ceo_client.post('/api/hr/digest/generate/')
@@ -204,9 +203,7 @@ class TestDigestNotifications(DigestTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         for hr_manager in hr_managers:
-            self.assertTrue(
-                Notification.objects.filter(recipient=hr_manager, title__icontains='Critical').exists()
-            )
+            self.assertTrue(Notification.objects.filter(recipient=hr_manager, title__icontains='Critical').exists())
 
     def test_notification_body_uses_summary_line(self):
         baker.make(PayrollEntry, paid=False, month=self._current_month())

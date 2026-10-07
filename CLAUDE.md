@@ -66,9 +66,9 @@ backend/api/
 | User model | Extend `AbstractUser` (already done in `api/models/user.py`) |
 | Authentication | `CustomAuthentication` in `core/authenticate.py` (reads JWT from cookies) |
 | Password hashing | `user.set_password()` — never hash manually |
-| Permission checks | `permission_classes = [IsAuthenticated]` on views |
+| Permission checks | `permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]` (from `api/permissions.py`). Use per-method lists when methods differ: `role_required(get=[...], post=[...])`. Never write `if request.user.role ...: return 403` inside a view. |
 | Object lookup with 404 | `get_object_or_404(Model, ...)` |
-| Pagination | Subclass `PageNumberPagination` (see `EmployeePagination` in `api/views/employees.py`) |
+| Pagination | Use the classes in `api/pagination.py` (`StandardPagination`, `TenPerPagePagination`, `TwentyPerPagePagination`). Pass summary totals as keyword arguments to `get_paginated_response(data, total=...)`. Don't write new pagination classes. |
 | Serialization / validation | DRF `ModelSerializer` — use `is_valid(raise_exception=True)` |
 | DB aggregations | `queryset.aggregate()` / `.annotate()` — not raw SQL or Python loops |
 | Filtering querysets | ORM `.filter()` with `Q` objects — not manual list filtering |
@@ -87,7 +87,7 @@ backend/api/
 ### Views
 
 - Use `APIView` (DRF) for all API endpoints — not Django's raw `JsonResponse` views (the `is_even` view is a legacy exception).
-- Role-based access: check `request.user.role` against `User.Role` choices — do not hardcode role strings.
+- Role-based access: declare it with `role_required(...)` in `permission_classes`, using `User.Role` choices. Don't hardcode role strings. Every 403 then returns the same message.
 - Return DRF `Response` objects, not raw `JsonResponse`, so content negotiation and status codes work correctly.
 
 ### URLs

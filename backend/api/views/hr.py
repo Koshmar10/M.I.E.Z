@@ -26,18 +26,16 @@ from ..models import (
     User,
 )
 from ..notifications import notify_role
+from ..permissions import role_required
 from ..serializers.reports import ReportSerializer
 from ..services import BusinessRuleError
 from ..services.hr import decide_leave_request
 
 
 class HrDashboardView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can view HR dashboard KPIs.'}, status=status.HTTP_403_FORBIDDEN)
-
         today = timezone.localdate()
         month_start = today.replace(day=1)
 
@@ -85,7 +83,7 @@ class HrDashboardView(APIView):
 
 
 class CeoHrSummaryView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO)]
 
     @staticmethod
     def _department_matches_role(department, role_keyword):
@@ -95,9 +93,6 @@ class CeoHrSummaryView(APIView):
         return keyword in slug or keyword in name
 
     def get(self, request):
-        if request.user.role != User.Role.CEO:
-            return Response({'detail': 'Only CEO can view HR summary.'}, status=status.HTTP_403_FORBIDDEN)
-
         today = timezone.localdate()
 
         current_leaves = LeaveRequest.objects.filter(
@@ -213,7 +208,7 @@ class CeoHrSummaryView(APIView):
 
 
 class HrUpcomingEventsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     @staticmethod
     def _month_end(value_date):
@@ -225,9 +220,6 @@ class HrUpcomingEventsView(APIView):
         return (target_date - today).days
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can view upcoming events.'}, status=status.HTTP_403_FORBIDDEN)
-
         today = timezone.localdate()
         horizon_days = max(7, min(int(request.query_params.get('days', 30) or 30), 90))
         cutoff = today + timedelta(days=horizon_days)
@@ -324,12 +316,9 @@ class HrUpcomingEventsView(APIView):
 
 
 class HrAttendanceView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can view attendance.'}, status=status.HTTP_403_FORBIDDEN)
-
         week_raw = request.query_params.get('week')
         today = timezone.localdate()
 
@@ -386,12 +375,9 @@ class HrAttendanceView(APIView):
 
 
 class LeaveRequestListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can view leave requests.'}, status=status.HTTP_403_FORBIDDEN)
-
         status_filter = (request.query_params.get('status') or '').strip().upper()
 
         leave_requests = (
@@ -448,9 +434,6 @@ class LeaveRequestListCreateView(APIView):
         return Response(rows, status=status.HTTP_200_OK)
 
     def post(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can create leave requests.'}, status=status.HTTP_403_FORBIDDEN)
-
         employee_id = request.data.get('employee')
         leave_type = request.data.get('type', LeaveRequest.Type.VACATION)
         from_date_raw = request.data.get('from_date')
@@ -494,12 +477,9 @@ class LeaveRequestListCreateView(APIView):
 
 
 class LeaveRequestApproveView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def patch(self, request, id):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can approve leave requests.'}, status=status.HTTP_403_FORBIDDEN)
-
         leave_request = get_object_or_404(LeaveRequest, id=id)
         try:
             decide_leave_request(leave_request, approve=True, actor=request.user)
@@ -510,12 +490,9 @@ class LeaveRequestApproveView(APIView):
 
 
 class LeaveRequestRejectView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def patch(self, request, id):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can reject leave requests.'}, status=status.HTTP_403_FORBIDDEN)
-
         leave_request = get_object_or_404(LeaveRequest, id=id)
         try:
             decide_leave_request(leave_request, approve=False, actor=request.user)
@@ -526,7 +503,7 @@ class LeaveRequestRejectView(APIView):
 
 
 class ContractListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     @staticmethod
     def _computed_status(contract, today):
@@ -556,9 +533,6 @@ class ContractListView(APIView):
         }
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can view contracts.'}, status=status.HTTP_403_FORBIDDEN)
-
         status_filter = (request.query_params.get('status') or '').strip().lower()
         today = timezone.localdate()
 
@@ -576,20 +550,14 @@ class ContractListView(APIView):
 
 
 class ContractDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def get(self, request, id):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can view contract details.'}, status=status.HTTP_403_FORBIDDEN)
-
         today = timezone.localdate()
         contract = get_object_or_404(Contract.objects.select_related('employee', 'department'), id=id)
         return Response(ContractListView._serialize_contract(contract, today), status=status.HTTP_200_OK)
 
     def patch(self, request, id):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can edit contracts.'}, status=status.HTTP_403_FORBIDDEN)
-
         contract = get_object_or_404(Contract.objects.select_related('employee', 'department'), id=id)
         update_fields = []
 
@@ -651,16 +619,13 @@ class ContractDetailView(APIView):
 
 
 class PayrollListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     @staticmethod
     def _format_money(value):
         return str(Decimal(str(value or 0)).quantize(Decimal('0.01')))
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Only CEO and HR can view payroll.'}, status=status.HTTP_403_FORBIDDEN)
-
         month_raw = request.query_params.get('month')
         if not month_raw:
             return Response(
@@ -754,12 +719,9 @@ class PayrollListView(APIView):
 
 
 class LatestHrDigestView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
-
         report = Report.objects.filter(category=Report.Category.HR).order_by('-generated_at').first()
         if not report:
             return Response({'detail': 'No digests found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -771,13 +733,9 @@ class LatestHrDigestView(APIView):
 class HrDigestGenerateView(APIView):
     """Generate weekly HR digest with insights and create notifications for critical issues."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO)]
 
     def post(self, request):
-        # Only CEO can request digest generation
-        if request.user.role != User.Role.CEO:
-            return Response({'detail': 'Only CEO can request HR digest generation.'}, status=status.HTTP_403_FORBIDDEN)
-
         try:
             # Generate the digest
             generator = DigestGenerator()
@@ -833,17 +791,12 @@ class HrDigestGenerateView(APIView):
 
 
 class RunInsightsAgentView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def post(self, request):
         from datetime import date
 
         from django.core.cache import cache
-
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response(
-                {'detail': 'Forbidden. Only CEO and HR Manager can run insights.'}, status=status.HTTP_403_FORBIDDEN
-            )
 
         cache_key = f'run_insights_agent_{request.user.id}_{date.today().isoformat()}'
         count = cache.get(cache_key, 0)

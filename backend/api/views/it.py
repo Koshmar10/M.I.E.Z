@@ -1,6 +1,5 @@
 """IT: tickets, assets, system status and IT dashboards."""
 
-from collections import OrderedDict
 from datetime import timedelta
 
 from django.db.models import (
@@ -22,9 +21,7 @@ from django.utils import timezone
 from django_filters import rest_framework as filters
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateAPIView
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -35,6 +32,8 @@ from ..models import (
     Ticket,
     User,
 )
+from ..pagination import TenPerPagePagination
+from ..permissions import role_required
 from ..serializers.it import (
     AssetSerializer,
     SystemStatusSerializer,
@@ -47,20 +46,14 @@ IT_SLA_THRESHOLD_HOURS = 48
 
 
 class AssetListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.IT)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({'detail': 'Only IT and CEO can view assets.'}, status=status.HTTP_403_FORBIDDEN)
-
         assets = Asset.objects.select_related('assigned_to').all().order_by('-created_at')
         serializer = AssetSerializer(assets, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({'detail': 'Only IT and CEO can create assets.'}, status=status.HTTP_403_FORBIDDEN)
-
         serializer = AssetSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         asset = serializer.save()
@@ -68,20 +61,14 @@ class AssetListCreateView(APIView):
 
 
 class AssetDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.IT)]
 
     def get(self, request, id):
-        if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({'detail': 'Only IT and CEO can view assets.'}, status=status.HTTP_403_FORBIDDEN)
-
         asset = get_object_or_404(Asset.objects.select_related('assigned_to'), id=id)
         serializer = AssetSerializer(asset)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def patch(self, request, id):
-        if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({'detail': 'Only IT and CEO can update assets.'}, status=status.HTTP_403_FORBIDDEN)
-
         asset = get_object_or_404(Asset.objects.select_related('assigned_to'), id=id)
         serializer = AssetSerializer(asset, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -89,23 +76,15 @@ class AssetDetailView(APIView):
         return Response(AssetSerializer(asset).data, status=status.HTTP_200_OK)
 
     def delete(self, request, id):
-        if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response({'detail': 'Only IT and CEO can delete assets.'}, status=status.HTTP_403_FORBIDDEN)
-
         asset = get_object_or_404(Asset, id=id)
         asset.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class DashboardItView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.IT)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response(
-                {'detail': 'Access denied. Only IT and CEO can view this dashboard.'}, status=status.HTTP_403_FORBIDDEN
-            )
-
         now = timezone.now()
         start_of_week = now - timedelta(days=now.weekday())
         start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -153,15 +132,9 @@ class DashboardItView(APIView):
 
 
 class ItTicketTrendView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.IT)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response(
-                {'detail': 'Access denied. Only IT and CEO can view ticket trends.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
         now = timezone.now()
         current_week_start = now - timedelta(days=now.weekday())
         current_week_start = current_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -207,15 +180,9 @@ class ItTicketTrendView(APIView):
 
 
 class TechnicianStatsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.IT)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            return Response(
-                {'detail': 'Access denied. Only IT and CEO can view technician stats.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
         try:
             days = int(request.query_params.get('days', 30))
         except (TypeError, ValueError):
@@ -290,25 +257,6 @@ class TechnicianStatsView(APIView):
         )
 
 
-class TicketPagination(PageNumberPagination):
-    page_size = 10
-    page_size_query_param = 'page_size'
-    max_page_size = 10
-
-    def get_paginated_response(self, data):
-        return Response(
-            OrderedDict(
-                [
-                    ('total_count', self.page.paginator.count),
-                    ('count', self.page.paginator.count),
-                    ('next', self.get_next_link()),
-                    ('previous', self.get_previous_link()),
-                    ('results', data),
-                ]
-            )
-        )
-
-
 class TicketFilterSet(filters.FilterSet):
     search = filters.CharFilter(method='filter_search')
     category = filters.CharFilter(method='filter_category')
@@ -342,9 +290,10 @@ class TicketFilterSet(filters.FilterSet):
 
 
 class TicketListCreateView(ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    # Anyone can raise a ticket; only IT and the CEO can list them.
+    permission_classes = [IsAuthenticated, role_required(get=[User.Role.CEO, User.Role.IT], post=User.Role.values)]
     serializer_class = TicketSerializer
-    pagination_class = TicketPagination
+    pagination_class = TenPerPagePagination
     filter_backends = [DjangoFilterBackend]
     filterset_class = TicketFilterSet
 
@@ -354,19 +303,11 @@ class TicketListCreateView(ListCreateAPIView):
         return TicketSerializer
 
     def get_queryset(self):
-        request = self.request
-        if request.user.role not in [User.Role.IT, User.Role.CEO]:
-            raise PermissionDenied('Only IT technicians and CEO can view tickets.')
-
         return (
             Ticket.objects.select_related('department', 'requested_by', 'assigned_to', 'requested_for')
             .all()
             .order_by('-created_at')
         )
-
-    def create(self, request, *args, **kwargs):
-        """Allow any authenticated user to create a ticket"""
-        return super().create(request, *args, **kwargs)
 
     def list(self, request, *args, **kwargs):
         # call parent to get paginated response
@@ -395,29 +336,17 @@ class TicketListCreateView(ListCreateAPIView):
 
 
 class TicketDetailView(RetrieveUpdateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.IT)]
     serializer_class = TicketUpdateSerializer
     http_method_names = ['patch']
     lookup_field = 'id'
     queryset = Ticket.objects.select_related('department', 'requested_by', 'assigned_to').all()
 
-    def get_queryset(self):
-        return Ticket.objects.select_related('department', 'requested_by', 'assigned_to').all()
-
-    def patch(self, request, *args, **kwargs):
-        if request.user.role not in [User.Role.IT, User.Role.CEO]:
-            raise PermissionDenied('Only IT technicians and CEO can update tickets.')
-        return self.partial_update(request, *args, **kwargs)
-
 
 class SystemStatusListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.IT)]
 
     def get(self, request):
-        # Only CEO and IT can view system status
-        if request.user.role not in [User.Role.CEO, User.Role.IT]:
-            raise PermissionDenied('Only CEO or IT team can view system status.')
-
         systems = SystemStatus.objects.all()
         serializer = SystemStatusSerializer(systems, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

@@ -9,7 +9,6 @@ from django.db.models import (
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,6 +19,8 @@ from ..models import (
     Supplier,
     User,
 )
+from ..pagination import StandardPagination, TwentyPerPagePagination
+from ..permissions import role_required
 from ..serializers.inventory import ProductSerializer, StockMovementSerializer, SupplierSerializer
 
 
@@ -116,12 +117,6 @@ class SupplierListView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class InventoryProductPagination(PageNumberPagination):
-    page_size = 10
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-
 class InventoryProductsView(APIView):
     """Return products with search, category, and status filters. Supports conditional pagination."""
 
@@ -161,7 +156,7 @@ class InventoryProductsView(APIView):
 
         # Only paginate if 'page' is requested
         if 'page' in request.query_params:
-            paginator = InventoryProductPagination()
+            paginator = StandardPagination()
             page = paginator.paginate_queryset(qs, request)
             iterable = page
             is_paginated = True
@@ -264,8 +259,7 @@ class StockMovementCreateView(APIView):
             # ignore parse errors and return unfiltered by date
             pass
 
-        paginator = PageNumberPagination()
-        paginator.page_size = 20
+        paginator = TwentyPerPagePagination()
         paginated = paginator.paginate_queryset(qs, request)
         serializer = StockMovementSerializer(paginated, many=True)
         return paginator.get_paginated_response(serializer.data)
@@ -290,14 +284,9 @@ class StockMovementCreateView(APIView):
 
 
 class InventoryDashboardView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.INVENTORY, User.Role.CEO)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.INVENTORY, User.Role.CEO]:
-            return Response(
-                {'detail': 'Only Inventory Managers and CEO can view this dashboard.'}, status=status.HTTP_403_FORBIDDEN
-            )
-
         total_products = Product.objects.count()
         low_stock_count = Product.objects.filter(stock_count__lt=F('min_stock'), stock_count__gt=0).count()
         out_of_stock_count = Product.objects.filter(stock_count=0).count()

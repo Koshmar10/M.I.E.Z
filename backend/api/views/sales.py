@@ -1,6 +1,5 @@
 """Sales: orders, invoices, customers, product catalogue and sales analytics."""
 
-from collections import OrderedDict
 from datetime import timedelta
 
 from django.db.models import (
@@ -14,7 +13,6 @@ from django.db.models.functions import Coalesce, TruncDay
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -27,6 +25,8 @@ from ..models import (
     Product,
     User,
 )
+from ..pagination import StandardPagination, TenPerPagePagination, TwentyPerPagePagination
+from ..permissions import role_required
 from ..serializers.sales import (
     CustomerDetailSerializer,
     CustomerSalesSummarySerializer,
@@ -41,52 +41,10 @@ from ..services import BusinessRuleError
 from ..services.sales import change_order_status, mark_invoice_paid
 
 
-class OrderPagination(PageNumberPagination):
-    page_size = 10
-    page_size_query_param = 'page_size'
-    max_page_size = 10
-
-    def get_paginated_response(self, data, total_ron_sum):
-        return Response(
-            OrderedDict(
-                [
-                    ('total_count', self.page.paginator.count),
-                    ('total_ron_sum', str(total_ron_sum)),
-                    ('count', self.page.paginator.count),
-                    ('next', self.get_next_link()),
-                    ('previous', self.get_previous_link()),
-                    ('results', data),
-                ]
-            )
-        )
-
-
-class InvoicePagination(PageNumberPagination):
-    page_size = 10
-    page_size_query_param = 'page_size'
-    max_page_size = 10
-
-    def get_paginated_response(self, data):
-        return Response(
-            OrderedDict(
-                [
-                    ('total_count', self.page.paginator.count),
-                    ('count', self.page.paginator.count),
-                    ('next', self.get_next_link()),
-                    ('previous', self.get_previous_link()),
-                    ('results', data),
-                ]
-            )
-        )
-
-
 class OrderListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def post(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({'detail': 'Only Sales and CEO can create orders.'}, status=status.HTTP_403_FORBIDDEN)
-
         serializer = OrderCreateSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         order = serializer.save()
@@ -96,9 +54,6 @@ class OrderListView(APIView):
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
     def get(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({'detail': 'Only Sales and CEO can view orders.'}, status=status.HTTP_403_FORBIDDEN)
-
         queryset = Order.objects.select_related('customer').all().order_by('-date', '-id')
 
         search = request.query_params.get('search', '').strip()
@@ -116,19 +71,16 @@ class OrderListView(APIView):
         totals = queryset.aggregate(total_ron_sum=Sum('value_ron'))
         total_ron_sum = totals['total_ron_sum'] or 0
 
-        paginator = OrderPagination()
+        paginator = TenPerPagePagination()
         paginated = paginator.paginate_queryset(queryset, request)
         serializer = OrderListSerializer(paginated, many=True)
-        return paginator.get_paginated_response(serializer.data, total_ron_sum)
+        return paginator.get_paginated_response(serializer.data, total_ron_sum=str(total_ron_sum))
 
 
 class OrderDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request, id):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({'detail': 'Only Sales and CEO can view orders.'}, status=status.HTTP_403_FORBIDDEN)
-
         order = get_object_or_404(
             Order.objects.select_related('customer', 'created_by').prefetch_related('items__product'),
             id=id,
@@ -137,9 +89,6 @@ class OrderDetailView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def patch(self, request, id):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({'detail': 'Only Sales and CEO can update orders.'}, status=status.HTTP_403_FORBIDDEN)
-
         order = get_object_or_404(
             Order.objects.select_related('customer', 'created_by').prefetch_related('items__product'),
             id=id,
@@ -159,7 +108,7 @@ class OrderDetailView(APIView):
 
 
 class SalesDashboardView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     @staticmethod
     def _pct_change(today_value, yesterday_value):
@@ -172,11 +121,6 @@ class SalesDashboardView(APIView):
         return round(((today_numeric - yesterday_numeric) / yesterday_numeric) * 100, 2)
 
     def get(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response(
-                {'detail': 'Only Sales and CEO can view sales KPI dashboard.'}, status=status.HTTP_403_FORBIDDEN
-            )
-
         today = timezone.localdate()
         yesterday = today - timedelta(days=1)
         start_of_week = today - timedelta(days=today.weekday())
@@ -223,14 +167,9 @@ class SalesDashboardView(APIView):
 
 
 class SalesDailyOrdersView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response(
-                {'detail': 'Only Sales and CEO can view daily orders analytics.'}, status=status.HTTP_403_FORBIDDEN
-            )
-
         today = timezone.localdate()
         start_date = today - timedelta(days=6)
 
@@ -264,14 +203,9 @@ class SalesDailyOrdersView(APIView):
 
 
 class SalesTopProductsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response(
-                {'detail': 'Only Sales and CEO can view top products analytics.'}, status=status.HTTP_403_FORBIDDEN
-            )
-
         today = timezone.localdate()
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=6)
@@ -308,34 +242,10 @@ class SalesTopProductsView(APIView):
         )
 
 
-class ProductPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-    def get_paginated_response(self, data):
-        return Response(
-            OrderedDict(
-                [
-                    ('total_count', self.page.paginator.count),
-                    ('count', self.page.paginator.count),
-                    ('next', self.get_next_link()),
-                    ('previous', self.get_previous_link()),
-                    ('results', data),
-                ]
-            )
-        )
-
-
 class SalesProductsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response(
-                {'detail': 'Only Sales and CEO can view the product catalogue.'}, status=status.HTTP_403_FORBIDDEN
-            )
-
         queryset = Product.objects.all().order_by('name')
 
         search = request.query_params.get('search', '').strip()
@@ -346,25 +256,16 @@ class SalesProductsView(APIView):
         if category:
             queryset = queryset.filter(category__iexact=category)
 
-        paginator = ProductPagination()
+        paginator = TwentyPerPagePagination()
         paginated = paginator.paginate_queryset(queryset, request)
         serializer = SalesProductSerializer(paginated, many=True)
         return paginator.get_paginated_response(serializer.data)
 
 
-class CustomerPagination(PageNumberPagination):
-    page_size = 10
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-
 class CustomerListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({'detail': 'Only Sales and CEO can view customers.'}, status=status.HTTP_403_FORBIDDEN)
-
         customers = Customer.objects.annotate(
             total_value_ron=Coalesce(
                 Sum('orders__value_ron'), Value(0), output_field=DecimalField(max_digits=12, decimal_places=2)
@@ -372,31 +273,25 @@ class CustomerListView(APIView):
             orders_count=Count('orders'),
         ).order_by('-total_value_ron', 'name')
 
-        paginator = CustomerPagination()
+        paginator = StandardPagination()
         paginated = paginator.paginate_queryset(customers, request)
         serializer = CustomerSalesSummarySerializer(paginated, many=True)
         return paginator.get_paginated_response(serializer.data)
 
 
 class CustomerDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request, id):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({'detail': 'Only Sales and CEO can view customers.'}, status=status.HTTP_403_FORBIDDEN)
-
         customer = get_object_or_404(Customer.objects.prefetch_related('orders'), id=id)
         serializer = CustomerDetailSerializer(customer)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class InvoiceListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({'detail': 'Only Sales and CEO can view invoices.'}, status=status.HTTP_403_FORBIDDEN)
-
         today = timezone.localdate()
         all_invoices = Invoice.objects.all()
 
@@ -422,23 +317,21 @@ class InvoiceListView(APIView):
             else:
                 queryset = queryset.filter(status__iexact=status_filter)
 
-        paginator = InvoicePagination()
+        paginator = TenPerPagePagination()
         paginated = paginator.paginate_queryset(queryset, request)
         serializer = InvoiceListSerializer(paginated, many=True)
-        paginated_response = paginator.get_paginated_response(serializer.data)
-        paginated_response.data['paid_total'] = str(totals['paid_total'] or '0.00')
-        paginated_response.data['pending_total'] = str(totals['pending_total'] or '0.00')
-        paginated_response.data['overdue_total'] = str(totals['overdue_total'] or '0.00')
-        return paginated_response
+        return paginator.get_paginated_response(
+            serializer.data,
+            paid_total=str(totals['paid_total'] or '0.00'),
+            pending_total=str(totals['pending_total'] or '0.00'),
+            overdue_total=str(totals['overdue_total'] or '0.00'),
+        )
 
 
 class InvoiceDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request, id):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({'detail': 'Only Sales and CEO can view invoices.'}, status=status.HTTP_403_FORBIDDEN)
-
         invoice = get_object_or_404(
             Invoice.objects.select_related('order', 'order__customer').prefetch_related('order__items__product'),
             id=id,
@@ -447,9 +340,6 @@ class InvoiceDetailView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def patch(self, request, id):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response({'detail': 'Only Sales and CEO can update invoices.'}, status=status.HTTP_403_FORBIDDEN)
-
         invoice = get_object_or_404(
             Invoice.objects.select_related('order', 'order__customer').prefetch_related('order__items__product'),
             id=id,
@@ -469,14 +359,9 @@ class InvoiceDetailView(APIView):
 
 
 class SalesChannelSplitView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response(
-                {'detail': 'Only Sales and CEO can view channel split analytics.'}, status=status.HTTP_403_FORBIDDEN
-            )
-
         rows = Order.objects.values('channel').annotate(orders_count=Count('id')).order_by('channel')
         total_orders = sum(row['orders_count'] for row in rows)
 
@@ -503,14 +388,9 @@ class SalesChannelSplitView(APIView):
 
 
 class SalesRevenueTrendView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.SALES, User.Role.CEO)]
 
     def get(self, request):
-        if request.user.role not in [User.Role.SALES, User.Role.CEO]:
-            return Response(
-                {'detail': 'Only Sales and CEO can view revenue trend analytics.'}, status=status.HTTP_403_FORBIDDEN
-            )
-
         today = timezone.localdate()
         start_date = today - timedelta(days=6)
 

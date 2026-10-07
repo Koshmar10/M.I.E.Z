@@ -10,26 +10,18 @@ from ..models import (
     Workflow,
     WorkflowLog,
 )
+from ..permissions import role_required
 from ..serializers.workflows import WorkflowLogSerializer, WorkflowSerializer, WorkflowWriteSerializer
 
 
 class WorkflowListView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def _check_role(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Forbidden.'}, status=403)
-        return None
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def get(self, request):
-        if err := self._check_role(request):
-            return err
         workflows = Workflow.objects.all().order_by('name')
         return Response(WorkflowSerializer(workflows, many=True).data)
 
     def post(self, request):
-        if err := self._check_role(request):
-            return err
         ser = WorkflowWriteSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         workflow = ser.save()
@@ -37,19 +29,12 @@ class WorkflowListView(APIView):
 
 
 class WorkflowDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def _get_workflow(self, id):
         return get_object_or_404(Workflow, id=id)
 
-    def _check_role(self, request):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Forbidden.'}, status=403)
-        return None
-
     def patch(self, request, id):
-        if err := self._check_role(request):
-            return err
         workflow = self._get_workflow(id)
         ser = WorkflowWriteSerializer(workflow, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
@@ -57,19 +42,15 @@ class WorkflowDetailView(APIView):
         return Response(WorkflowSerializer(workflow).data)
 
     def delete(self, request, id):
-        if err := self._check_role(request):
-            return err
         workflow = self._get_workflow(id)
         workflow.delete()
         return Response(status=204)
 
 
 class WorkflowToggleView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]
 
     def patch(self, request, id):
-        if request.user.role not in [User.Role.CEO, User.Role.HR]:
-            return Response({'detail': 'Forbidden.'}, status=403)
         workflow = get_object_or_404(Workflow, id=id)
         is_active = request.data.get('is_active')
         if is_active is None:
@@ -94,10 +75,8 @@ class WorkflowActionsView(APIView):
 
 
 class WorkflowLogListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, role_required(User.Role.CEO)]
 
     def get(self, request):
-        if request.user.role != 'CEO':
-            return Response({'detail': 'Forbidden.'}, status=403)
         logs = WorkflowLog.objects.select_related('workflow').order_by('-triggered_at')[:100]
         return Response(WorkflowLogSerializer(logs, many=True).data)

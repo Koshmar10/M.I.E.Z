@@ -45,10 +45,10 @@ class EmployeeDepartmentCrudTests(APITestCase):
 
         response = self.client.post('/api/employees/', self.valid_payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['email'], self.valid_payload['email'])
-        self.assertEqual(response.data['first_name'], self.valid_payload['first_name'])
-        self.assertEqual(response.data['department']['id'], self.valid_payload['department'])
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['email'] == self.valid_payload['email']
+        assert response.data['first_name'] == self.valid_payload['first_name']
+        assert response.data['department']['id'] == self.valid_payload['department']
 
     def test_post_employees_missing_required_field_returns_400_with_field_name_in_error(self):
         self.client.force_authenticate(user=self.ceo_user)
@@ -57,8 +57,8 @@ class EmployeeDepartmentCrudTests(APITestCase):
 
         response = self.client.post('/api/employees/', payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('first_name', response.data['field_errors'])
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'first_name' in response.data['field_errors']
 
     def test_post_employees_duplicate_email_returns_400(self):
         User.objects.create_user(
@@ -70,8 +70,8 @@ class EmployeeDepartmentCrudTests(APITestCase):
 
         response = self.client.post('/api/employees/', self.valid_payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('email', response.data['field_errors'])
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'email' in response.data['field_errors']
 
     def test_patch_employee_updates_department_and_role_for_hr_and_ceo(self):
         employee = baker.make(
@@ -99,16 +99,16 @@ class EmployeeDepartmentCrudTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['first_name'], 'Anca')
-        self.assertEqual(response.data['last_name'], 'Pop')
-        self.assertEqual(response.data['position'], 'IT Specialist')
-        self.assertEqual(response.data['phone'], '+40222222222')
-        self.assertFalse(response.data['is_active'])
-        self.assertEqual(response.data['department']['id'], self.it_department.id)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['first_name'] == 'Anca'
+        assert response.data['last_name'] == 'Pop'
+        assert response.data['position'] == 'IT Specialist'
+        assert response.data['phone'] == '+40222222222'
+        assert not response.data['is_active']
+        assert response.data['department']['id'] == self.it_department.id
 
         employee.refresh_from_db()
-        self.assertEqual(employee.role, User.Role.IT)
+        assert employee.role == User.Role.IT
 
     def test_patch_employee_denied_for_non_hr_or_ceo(self):
         employee = baker.make(User, role=User.Role.SALES, department=self.hr_department)
@@ -121,7 +121,7 @@ class EmployeeDepartmentCrudTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_get_employees_returns_paginated_list_with_correct_count(self):
         baker.make(User, _quantity=3, department=self.hr_department, role=User.Role.SALES)
@@ -129,9 +129,9 @@ class EmployeeDepartmentCrudTests(APITestCase):
 
         response = self.client.get('/api/employees/?page_size=2')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['count'], User.objects.count())
-        self.assertEqual(len(response.data['results']), 2)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == User.objects.count()
+        assert len(response.data['results']) == 2
 
     def test_get_employees_department_hr_filters_correctly(self):
         baker.make(User, department=self.hr_department, role=User.Role.HR)
@@ -140,9 +140,9 @@ class EmployeeDepartmentCrudTests(APITestCase):
 
         response = self.client.get('/api/employees/?department=hr')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['count'], 1)
-        self.assertEqual(response.data['results'][0]['department']['slug'], 'hr')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] == 1
+        assert response.data['results'][0]['department']['slug'] == 'hr'
 
     def test_get_employees_stats_totals_computed_correctly_via_orm(self):
         self.ceo_user.is_active = False
@@ -178,15 +178,15 @@ class EmployeeDepartmentCrudTests(APITestCase):
 
         response = self.client.get('/api/employees/stats/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['total'], User.objects.count())
-        self.assertEqual(response.data['active'], 2)
-        self.assertEqual(response.data['full_time'], 1)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['total'] == User.objects.count()
+        assert response.data['active'] == 2
+        assert response.data['full_time'] == 1
 
         departments = {row['name']: row['count'] for row in response.data['departments']}
-        self.assertEqual(departments['HR'], 1)
-        self.assertEqual(departments['IT'], 1)
-        self.assertEqual(departments['Unassigned'], 3)
+        assert departments['HR'] == 1
+        assert departments['IT'] == 1
+        assert departments['Unassigned'] == 3
 
     def test_post_departments_ceo_creates_department_returns_201(self):
         self.client.force_authenticate(user=self.ceo_user)
@@ -198,9 +198,9 @@ class EmployeeDepartmentCrudTests(APITestCase):
         }
         response = self.client.post('/api/departments/', payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['name'], payload['name'])
-        self.assertTrue(Department.objects.filter(slug='finance').exists())
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['name'] == payload['name']
+        assert Department.objects.filter(slug='finance').exists()
 
     def test_post_departments_non_ceo_role_returns_403(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -212,7 +212,7 @@ class EmployeeDepartmentCrudTests(APITestCase):
         }
         response = self.client.post('/api/departments/', payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_delete_departments_id_removes_department_returns_204(self):
         department = Department.objects.create(name='Operations', slug='operations')
@@ -220,8 +220,8 @@ class EmployeeDepartmentCrudTests(APITestCase):
 
         response = self.client.delete(f'/api/departments/{department.id}/')
 
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Department.objects.filter(id=department.id).exists())
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not Department.objects.filter(id=department.id).exists()
 
 
 class TestHrEmployeesEndpoint(HrEndpointsTestCase):
@@ -253,9 +253,9 @@ class TestHrEmployeesEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get('/api/employees/?page_size=100')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertGreaterEqual(response.data['count'], 2)
-        self.assertGreaterEqual(len(response.data['results']), 2)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['count'] >= 2
+        assert len(response.data['results']) >= 2
 
         first = response.data['results'][0]
         expected_keys = {
@@ -275,4 +275,4 @@ class TestHrEmployeesEndpoint(HrEndpointsTestCase):
             'full_time',
             'department',
         }
-        self.assertTrue(expected_keys.issubset(first.keys()))
+        assert expected_keys.issubset(first.keys())

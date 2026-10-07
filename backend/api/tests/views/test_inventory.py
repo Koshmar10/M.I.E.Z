@@ -29,9 +29,9 @@ class InventoryBackendTests(APITestCase):
 
         response = self.client.get(self.products_url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(isinstance(response.data, list))
-        self.assertEqual(len(response.data), 5)
+        assert response.status_code == status.HTTP_200_OK
+        assert isinstance(response.data, list)
+        assert len(response.data) == 5
 
         first = response.data[0]
         expected_keys = {
@@ -45,7 +45,7 @@ class InventoryBackendTests(APITestCase):
             'status',
             'shortfall',
         }
-        self.assertTrue(expected_keys.issubset(first.keys()))
+        assert expected_keys.issubset(first.keys())
 
     def test_get_products_with_low_status_filter_returns_only_low_stock_items(self):
         # min_stock defaults to 10. Stock < 10 is LOW.
@@ -55,11 +55,11 @@ class InventoryBackendTests(APITestCase):
         self.client.force_authenticate(user=self.ceo_user)
         response = self.client.get(self.products_url, {'status': 'LOW'})
 
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(isinstance(response.data, list))
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['name'], 'Low Item')
-        self.assertEqual(response.data[0]['status'], 'LOW')
+        assert response.status_code == 200
+        assert isinstance(response.data, list)
+        assert len(response.data) == 1
+        assert response.data[0]['name'] == 'Low Item'
+        assert response.data[0]['status'] == 'LOW'
 
     def test_get_products_with_out_status_filter_returns_only_depleted_items(self):
         baker.make(Product, stock_count=0, min_stock=10, name='Out Item')
@@ -68,22 +68,22 @@ class InventoryBackendTests(APITestCase):
         self.client.force_authenticate(user=self.ceo_user)
         response = self.client.get(self.products_url, {'status': 'OUT'})
 
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(isinstance(response.data, list))
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['name'], 'Out Item')
-        self.assertEqual(response.data[0]['status'], 'OUT')
+        assert response.status_code == 200
+        assert isinstance(response.data, list)
+        assert len(response.data) == 1
+        assert response.data[0]['name'] == 'Out Item'
+        assert response.data[0]['status'] == 'OUT'
 
     def test_product_availability_property_logic(self):
         """Verify the model @property for human readable status."""
         p_out = Product(stock_count=0, min_stock=10)
-        self.assertEqual(p_out.availability, 'Out of Stock')
+        assert p_out.availability == 'Out of Stock'
 
         p_low = Product(stock_count=5, min_stock=10)
-        self.assertEqual(p_low.availability, 'Low Stock')
+        assert p_low.availability == 'Low Stock'
 
         p_ok = Product(stock_count=10, min_stock=10)
-        self.assertEqual(p_ok.availability, 'In Stock')
+        assert p_ok.availability == 'In Stock'
 
     def test_get_inventory_dashboard_returns_correct_kpi_aggregates(self):
         p1 = baker.make(Product, stock_count=0, min_stock=10)  # 1 OUT
@@ -96,11 +96,11 @@ class InventoryBackendTests(APITestCase):
         self.client.force_authenticate(user=self.ceo_user)
         response = self.client.get(self.dashboard_url)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['total_products'], 3)
-        self.assertEqual(response.data['low_stock_count'], 1)
-        self.assertEqual(response.data['out_of_stock_count'], 1)
-        self.assertEqual(response.data['deliveries_today'], 1)
+        assert response.status_code == 200
+        assert response.data['total_products'] == 3
+        assert response.data['low_stock_count'] == 1
+        assert response.data['out_of_stock_count'] == 1
+        assert response.data['deliveries_today'] == 1
 
     def test_post_stock_movement_inbound_increments_product_stock(self):
         product = baker.make(Product, stock_count=10)
@@ -109,9 +109,9 @@ class InventoryBackendTests(APITestCase):
         payload = {'product': product.id, 'movement_type': 'INBOUND', 'quantity': 20, 'notes': 'Large delivery'}
         response = self.client.post(self.movements_url, payload, format='json')
 
-        self.assertEqual(response.status_code, 201)
+        assert response.status_code == 201
         product.refresh_from_db()
-        self.assertEqual(product.stock_count, 30)
+        assert product.stock_count == 30
 
     def test_post_stock_movement_write_off_decrements_product_stock_down_to_zero(self):
         product = baker.make(Product, stock_count=10)
@@ -124,7 +124,7 @@ class InventoryBackendTests(APITestCase):
             format='json',
         )
         product.refresh_from_db()
-        self.assertEqual(product.stock_count, 6)
+        assert product.stock_count == 6
 
         # Test decrement beyond zero
         self.client.post(
@@ -133,7 +133,7 @@ class InventoryBackendTests(APITestCase):
             format='json',
         )
         product.refresh_from_db()
-        self.assertEqual(product.stock_count, 0)
+        assert product.stock_count == 0
 
     def test_post_stock_movement_adjustment_sets_stock_exactly(self):
         product = baker.make(Product, stock_count=10)
@@ -142,9 +142,9 @@ class InventoryBackendTests(APITestCase):
         payload = {'product': product.id, 'movement_type': 'ADJUSTMENT', 'quantity': 55, 'notes': 'adjustment'}
         response = self.client.post(self.movements_url, payload, format='json')
 
-        self.assertEqual(response.status_code, 201)
+        assert response.status_code == 201
         product.refresh_from_db()
-        self.assertEqual(product.stock_count, 55)
+        assert product.stock_count == 55
 
     def test_post_stock_movement_with_zero_quantity_returns_400(self):
         product = baker.make(Product, stock_count=10)
@@ -153,5 +153,5 @@ class InventoryBackendTests(APITestCase):
         payload = {'product': product.id, 'movement_type': 'INBOUND', 'quantity': 0}
         response = self.client.post(self.movements_url, payload, format='json')
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('quantity', response.data['field_errors'])
+        assert response.status_code == 400
+        assert 'quantity' in response.data['field_errors']

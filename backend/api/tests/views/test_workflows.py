@@ -24,29 +24,29 @@ class WorkflowCreateTests(TestCase):
 
     def test_create_workflow_returns_201(self):
         res = self.client.post('/api/workflows/', VALID_PAYLOAD, format='json')
-        self.assertEqual(res.status_code, 201)
-        self.assertEqual(res.data['name'], 'New Order Alert')
-        self.assertTrue(Workflow.objects.filter(name='New Order Alert').exists())
+        assert res.status_code == 201
+        assert res.data['name'] == 'New Order Alert'
+        assert Workflow.objects.filter(name='New Order Alert').exists()
 
     def test_create_workflow_missing_name_returns_400(self):
         payload = {**VALID_PAYLOAD, 'name': ''}
         res = self.client.post('/api/workflows/', payload, format='json')
-        self.assertEqual(res.status_code, 400)
+        assert res.status_code == 400
 
     def test_create_workflow_empty_actions_returns_400(self):
         payload = {**VALID_PAYLOAD, 'actions': []}
         res = self.client.post('/api/workflows/', payload, format='json')
-        self.assertEqual(res.status_code, 400)
+        assert res.status_code == 400
 
     def test_create_workflow_invalid_trigger_type_returns_400(self):
         payload = {**VALID_PAYLOAD, 'trigger_type': 'NOT_A_REAL_TRIGGER'}
         res = self.client.post('/api/workflows/', payload, format='json')
-        self.assertEqual(res.status_code, 400)
+        assert res.status_code == 400
 
     def test_create_workflow_forbidden_for_non_ceo_hr(self):
         self.client.force_authenticate(user=make_it(username='it1'))
         res = self.client.post('/api/workflows/', VALID_PAYLOAD, format='json')
-        self.assertEqual(res.status_code, 403)
+        assert res.status_code == 403
 
 
 class WorkflowListTests(TestCase):
@@ -60,17 +60,17 @@ class WorkflowListTests(TestCase):
 
     def test_list_workflows_returns_correct_active_count(self):
         res = self.client.get('/api/workflows/')
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(len(res.data), 3)
+        assert res.status_code == 200
+        assert len(res.data) == 3
         active = [w for w in res.data if w['is_active']]
-        self.assertEqual(len(active), 2)
+        assert len(active) == 2
 
     def test_list_includes_trigger_and_action_labels(self):
         res = self.client.get('/api/workflows/')
-        self.assertEqual(res.status_code, 200)
+        assert res.status_code == 200
         w = res.data[0]
-        self.assertIn('trigger_label', w)
-        self.assertIn('action_labels', w)
+        assert 'trigger_label' in w
+        assert 'action_labels' in w
 
 
 class WorkflowToggleTests(TestCase):
@@ -86,9 +86,9 @@ class WorkflowToggleTests(TestCase):
             {'is_active': False},
             format='json',
         )
-        self.assertEqual(res.status_code, 200)
+        assert res.status_code == 200
         self.workflow.refresh_from_db()
-        self.assertFalse(self.workflow.is_active)
+        assert not self.workflow.is_active
 
     def test_toggle_workflow_flips_is_active_to_true(self):
         self.workflow.is_active = False
@@ -98,13 +98,13 @@ class WorkflowToggleTests(TestCase):
             {'is_active': True},
             format='json',
         )
-        self.assertEqual(res.status_code, 200)
+        assert res.status_code == 200
         self.workflow.refresh_from_db()
-        self.assertTrue(self.workflow.is_active)
+        assert self.workflow.is_active
 
     def test_toggle_missing_is_active_returns_400(self):
         res = self.client.patch(f'/api/workflows/{self.workflow.id}/toggle/', {}, format='json')
-        self.assertEqual(res.status_code, 400)
+        assert res.status_code == 400
 
 
 class WorkflowDeleteTests(TestCase):
@@ -117,12 +117,12 @@ class WorkflowDeleteTests(TestCase):
     def test_delete_workflow_returns_204(self):
         wid = self.workflow.id
         res = self.client.delete(f'/api/workflows/{wid}/')
-        self.assertEqual(res.status_code, 204)
-        self.assertFalse(Workflow.objects.filter(id=wid).exists())
+        assert res.status_code == 204
+        assert not Workflow.objects.filter(id=wid).exists()
 
     def test_delete_nonexistent_returns_404(self):
         res = self.client.delete('/api/workflows/99999/')
-        self.assertEqual(res.status_code, 404)
+        assert res.status_code == 404
 
 
 class WorkflowRegistryTests(TestCase):
@@ -132,19 +132,19 @@ class WorkflowRegistryTests(TestCase):
 
     def test_triggers_endpoint_returns_all_types(self):
         res = self.client.get('/api/workflows/triggers/')
-        self.assertEqual(res.status_code, 200)
+        assert res.status_code == 200
         values = [t['value'] for t in res.data]
-        self.assertIn('DAILY_AT_TIME', values)
-        self.assertIn('NEW_ORDER_RECEIVED', values)
-        self.assertIn('NEW_IT_TICKET', values)
+        assert 'DAILY_AT_TIME' in values
+        assert 'NEW_ORDER_RECEIVED' in values
+        assert 'NEW_IT_TICKET' in values
 
     def test_actions_endpoint_returns_all_types(self):
         res = self.client.get('/api/workflows/actions/')
-        self.assertEqual(res.status_code, 200)
+        assert res.status_code == 200
         values = [a['value'] for a in res.data]
-        self.assertIn('NOTIFY_MANAGER', values)
-        self.assertIn('EMAIL_CEO', values)
-        self.assertIn('LOG_TO_AUDIT_TRAIL', values)
+        assert 'NOTIFY_MANAGER' in values
+        assert 'EMAIL_CEO' in values
+        assert 'LOG_TO_AUDIT_TRAIL' in values
 
 
 class WorkflowLogTests(TestCase):
@@ -155,7 +155,7 @@ class WorkflowLogTests(TestCase):
         self.workflow = make_workflow()
 
     def test_workflow_log_created_on_execution(self):
-        self.assertEqual(WorkflowLog.objects.count(), 0)
+        assert WorkflowLog.objects.count() == 0
         execute_workflow(
             self.workflow,
             'DAILY_AT_TIME',
@@ -164,20 +164,20 @@ class WorkflowLogTests(TestCase):
                 'link': '/workflows',
             },
         )
-        self.assertEqual(WorkflowLog.objects.count(), 1)
+        assert WorkflowLog.objects.count() == 1
         log = WorkflowLog.objects.first()
-        self.assertEqual(log.workflow, self.workflow)
-        self.assertEqual(log.trigger_type, 'DAILY_AT_TIME')
-        self.assertTrue(log.success)
+        assert log.workflow == self.workflow
+        assert log.trigger_type == 'DAILY_AT_TIME'
+        assert log.success
 
     def test_workflow_log_endpoint_ceo_only(self):
         execute_workflow(self.workflow, 'DAILY_AT_TIME', {'message': 'test', 'link': '/'})
         self.client.force_authenticate(user=self.ceo)
         res = self.client.get('/api/workflows/logs/')
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(len(res.data), 1)
+        assert res.status_code == 200
+        assert len(res.data) == 1
 
     def test_workflow_log_endpoint_forbidden_for_hr(self):
         self.client.force_authenticate(user=self.hr)
         res = self.client.get('/api/workflows/logs/')
-        self.assertEqual(res.status_code, 403)
+        assert res.status_code == 403

@@ -43,8 +43,8 @@ class TimeTriggerTests(TestCase):
             actions=['NOTIFY_MANAGER'],
         )
         self._call(self._fake_now('monday', '09:30'))
-        self.assertEqual(WorkflowLog.objects.count(), 1)
-        self.assertEqual(WorkflowLog.objects.first().trigger_type, 'DAILY_AT_TIME')
+        assert WorkflowLog.objects.count() == 1
+        assert WorkflowLog.objects.first().trigger_type == 'DAILY_AT_TIME'
 
     def test_daily_at_time_does_not_trigger_at_wrong_time(self):
         make_workflow(
@@ -54,7 +54,7 @@ class TimeTriggerTests(TestCase):
             actions=['NOTIFY_MANAGER'],
         )
         self._call(self._fake_now('monday', '10:00'))
-        self.assertEqual(WorkflowLog.objects.count(), 0)
+        assert WorkflowLog.objects.count() == 0
 
     def test_weekly_at_time_triggers_on_correct_day_and_time(self):
         make_workflow(
@@ -64,8 +64,8 @@ class TimeTriggerTests(TestCase):
             actions=['EMAIL_CEO'],
         )
         self._call(self._fake_now('wednesday', '08:00'))
-        self.assertEqual(WorkflowLog.objects.count(), 1)
-        self.assertEqual(WorkflowLog.objects.first().trigger_type, 'WEEKLY_AT_TIME')
+        assert WorkflowLog.objects.count() == 1
+        assert WorkflowLog.objects.first().trigger_type == 'WEEKLY_AT_TIME'
 
     def test_weekly_at_time_does_not_trigger_on_wrong_day(self):
         make_workflow(
@@ -75,7 +75,7 @@ class TimeTriggerTests(TestCase):
             actions=['EMAIL_CEO'],
         )
         self._call(self._fake_now('tuesday', '08:00'))
-        self.assertEqual(WorkflowLog.objects.count(), 0)
+        assert WorkflowLog.objects.count() == 0
 
     def test_inactive_workflow_not_triggered_by_command(self):
         make_workflow(
@@ -86,7 +86,7 @@ class TimeTriggerTests(TestCase):
             is_active=False,
         )
         self._call(self._fake_now('monday', '09:30'))
-        self.assertEqual(WorkflowLog.objects.count(), 0)
+        assert WorkflowLog.objects.count() == 0
 
     def test_managed_by_workflow_skipped_by_command(self):
         """Workflows with managed_by in trigger_config are owned by dedicated commands."""
@@ -97,4 +97,4 @@ class TimeTriggerTests(TestCase):
             actions=['GENERATE_REPORT'],
         )
         self._call(self._fake_now('monday', '06:00'))
-        self.assertEqual(WorkflowLog.objects.count(), 0)
+        assert WorkflowLog.objects.count() == 0

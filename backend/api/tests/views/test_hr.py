@@ -18,30 +18,30 @@ class TestHrDigestGenerateView(DigestTestCase):
         hr_client.force_authenticate(user=self.hr_manager)
 
         response = hr_client.post('/api/hr/digest/generate/')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_ceo_can_generate_digest(self):
         response = self.ceo_client.post('/api/hr/digest/generate/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
         data = response.json()
-        self.assertIn('success', data)
-        self.assertTrue(data['success'])
-        self.assertIn('digest', data)
-        self.assertIn('report_id', data)
+        assert 'success' in data
+        assert data['success']
+        assert 'digest' in data
+        assert 'report_id' in data
 
     def test_digest_generates_creates_report(self):
         initial_count = Report.objects.filter(category=Report.Category.HR).count()
 
         response = self.ceo_client.post('/api/hr/digest/generate/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
         final_count = Report.objects.filter(category=Report.Category.HR).count()
-        self.assertEqual(final_count, initial_count + 1)
+        assert final_count == initial_count + 1
 
         report = Report.objects.filter(category=Report.Category.HR).latest('generated_at')
-        self.assertIsNotNone(report.digest_data)
-        self.assertIn('critical', report.digest_data)
+        assert report.digest_data is not None
+        assert 'critical' in report.digest_data
 
     def test_digest_sends_notification_for_critical_issues(self):
         current_month = self._current_month()
@@ -50,41 +50,41 @@ class TestHrDigestGenerateView(DigestTestCase):
         initial_notifications = Notification.objects.filter(recipient=self.hr_manager).count()
 
         response = self.ceo_client.post('/api/hr/digest/generate/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
         data = response.json()
-        self.assertTrue(data['notifications_sent'])
+        assert data['notifications_sent']
 
         final_notifications = Notification.objects.filter(recipient=self.hr_manager).count()
-        self.assertEqual(final_notifications, initial_notifications + 1)
+        assert final_notifications == initial_notifications + 1
 
         notification = Notification.objects.filter(recipient=self.hr_manager).latest('created_at')
-        self.assertIn('Critical', notification.title)
+        assert 'Critical' in notification.title
 
     def test_digest_does_not_send_notification_for_no_issues(self):
         initial_notifications = Notification.objects.filter(recipient=self.hr_manager).count()
 
         response = self.ceo_client.post('/api/hr/digest/generate/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
         final_notifications = Notification.objects.filter(recipient=self.hr_manager).count()
-        self.assertLessEqual(final_notifications - initial_notifications, 1)
+        assert final_notifications - initial_notifications <= 1
 
     def test_report_stores_full_digest_data(self):
         response = self.ceo_client.post('/api/hr/digest/generate/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
         report = Report.objects.get(id=response.json()['report_id'])
-        self.assertIsNotNone(report.digest_data)
-        self.assertIn('week', report.digest_data)
-        self.assertIn('generated_at', report.digest_data)
-        self.assertIn('summary_line', report.digest_data)
-        self.assertEqual(report.generated_by, self.ceo_user)
+        assert report.digest_data is not None
+        assert 'week' in report.digest_data
+        assert 'generated_at' in report.digest_data
+        assert 'summary_line' in report.digest_data
+        assert report.generated_by == self.ceo_user
 
     def test_unauthenticated_user_cannot_generate_digest(self):
         client = APITestCase.client_class()
         response = client.post('/api/hr/digest/generate/')
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 class TestDigestNotifications(DigestTestCase):
@@ -93,10 +93,10 @@ class TestDigestNotifications(DigestTestCase):
         baker.make(PayrollEntry, paid=False, month=self._current_month())
 
         response = self.ceo_client.post('/api/hr/digest/generate/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
         for hr_manager in hr_managers:
-            self.assertTrue(Notification.objects.filter(recipient=hr_manager, title__icontains='Critical').exists())
+            assert Notification.objects.filter(recipient=hr_manager, title__icontains='Critical').exists()
 
     def test_notification_body_uses_summary_line(self):
         baker.make(PayrollEntry, paid=False, month=self._current_month())
@@ -110,21 +110,21 @@ class TestDigestNotifications(DigestTestCase):
             title__icontains='Critical',
         ).latest('created_at')
 
-        self.assertEqual(notification.body, summary)
+        assert notification.body == summary
 
     def test_notification_includes_link_to_reports(self):
         baker.make(PayrollEntry, paid=False, month=self._current_month())
 
         response = self.ceo_client.post('/api/hr/digest/generate/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
         notification = Notification.objects.filter(
             recipient=self.hr_manager,
             title__icontains='Critical',
         ).latest('created_at')
 
-        self.assertIn('/reports', notification.link)
-        self.assertIn('HR', notification.link)
+        assert '/reports' in notification.link
+        assert 'HR' in notification.link
 
 
 class TestHrAttendanceEndpoint(HrEndpointsTestCase):
@@ -146,13 +146,13 @@ class TestHrAttendanceEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get(f'/api/attendance/?week={week_start.isoformat()}')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['week_start'], week_start.isoformat())
-        self.assertEqual(len(response.data['days']), 7)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['week_start'] == week_start.isoformat()
+        assert len(response.data['days']) == 7
 
         row = next(item for item in response.data['grid'] if item['employee_id'] == employee.id)
-        self.assertEqual(row['statuses'][week_start.isoformat()], Attendance.Status.PRESENT)
-        self.assertEqual(row['statuses'][(week_start + timedelta(days=1)).isoformat()], Attendance.Status.REMOTE)
+        assert row['statuses'][week_start.isoformat()] == Attendance.Status.PRESENT
+        assert row['statuses'][(week_start + timedelta(days=1)).isoformat()] == Attendance.Status.REMOTE
 
 
 class TestHrLeaveRequestsEndpoint(HrEndpointsTestCase):
@@ -187,14 +187,14 @@ class TestHrLeaveRequestsEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get('/api/leave-requests/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertGreaterEqual(len(response.data), 2)
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) >= 2
 
         by_id = {item['id']: item for item in response.data}
-        self.assertEqual(by_id[pending_request.id]['type'], LeaveRequest.Type.VACATION)
-        self.assertEqual(by_id[pending_request.id]['days'], 3)
-        self.assertEqual(by_id[approved_request.id]['status'], LeaveRequest.Status.APPROVED)
-        self.assertEqual(by_id[approved_request.id]['approved_by']['id'], self.hr_user.id)
+        assert by_id[pending_request.id]['type'] == LeaveRequest.Type.VACATION
+        assert by_id[pending_request.id]['days'] == 3
+        assert by_id[approved_request.id]['status'] == LeaveRequest.Status.APPROVED
+        assert by_id[approved_request.id]['approved_by']['id'] == self.hr_user.id
 
     def test_get_leave_requests_status_filter_returns_only_matching_rows(self):
         employee = baker.make(User, role=User.Role.SALES, department=self.hr_department)
@@ -213,8 +213,8 @@ class TestHrLeaveRequestsEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get('/api/leave-requests/?status=approved')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data, [])
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data == []
 
     def test_post_leave_requests_creates_pending_status(self):
         employee = baker.make(User, role=User.Role.SALES, department=self.hr_department)
@@ -229,9 +229,9 @@ class TestHrLeaveRequestsEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.post('/api/leave-requests/', payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        assert response.status_code == status.HTTP_201_CREATED
         leave_request = LeaveRequest.objects.get(id=response.data['id'])
-        self.assertEqual(leave_request.status, LeaveRequest.Status.PENDING)
+        assert leave_request.status == LeaveRequest.Status.PENDING
 
     def test_patch_leave_request_approve_sets_approved_status(self):
         employee = baker.make(User, role=User.Role.SALES, department=self.hr_department)
@@ -244,10 +244,10 @@ class TestHrLeaveRequestsEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.patch(f'/api/leave-requests/{leave_request.id}/approve/', {}, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         leave_request.refresh_from_db()
-        self.assertEqual(leave_request.status, LeaveRequest.Status.APPROVED)
-        self.assertEqual(leave_request.approved_by_id, self.hr_user.id)
+        assert leave_request.status == LeaveRequest.Status.APPROVED
+        assert leave_request.approved_by_id == self.hr_user.id
 
     def test_patch_leave_request_reject_sets_rejected_status(self):
         employee = baker.make(User, role=User.Role.SALES, department=self.hr_department)
@@ -260,10 +260,10 @@ class TestHrLeaveRequestsEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.patch(f'/api/leave-requests/{leave_request.id}/reject/', {}, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         leave_request.refresh_from_db()
-        self.assertEqual(leave_request.status, LeaveRequest.Status.REJECTED)
-        self.assertEqual(leave_request.approved_by_id, self.hr_user.id)
+        assert leave_request.status == LeaveRequest.Status.REJECTED
+        assert leave_request.approved_by_id == self.hr_user.id
 
 
 class TestHrContractsEndpoint(HrEndpointsTestCase):
@@ -295,12 +295,12 @@ class TestHrContractsEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get('/api/contracts/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         by_number = {item['contract_number']: item for item in response.data['contracts']}
 
-        self.assertEqual(by_number[active_contract.contract_number]['status'], 'ACTIVE')
-        self.assertEqual(by_number[expiring_contract.contract_number]['status'], 'EXPIRING')
-        self.assertEqual(by_number[expired_contract.contract_number]['status'], 'EXPIRED')
+        assert by_number[active_contract.contract_number]['status'] == 'ACTIVE'
+        assert by_number[expiring_contract.contract_number]['status'] == 'EXPIRING'
+        assert by_number[expired_contract.contract_number]['status'] == 'EXPIRED'
 
     def test_get_contracts_expiring_filter_returns_only_expiring(self):
         today = timezone.localdate()
@@ -323,9 +323,9 @@ class TestHrContractsEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get('/api/contracts/?status=expiring')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['contracts']), 1)
-        self.assertEqual(response.data['contracts'][0]['status'], 'EXPIRING')
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['contracts']) == 1
+        assert response.data['contracts'][0]['status'] == 'EXPIRING'
 
     def test_get_contract_detail_returns_full_contract_payload(self):
         today = timezone.localdate()
@@ -350,15 +350,15 @@ class TestHrContractsEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get(f'/api/contracts/{contract.id}/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['id'], contract.id)
-        self.assertEqual(response.data['employee_name'], 'Ana Pop')
-        self.assertEqual(response.data['department'], self.hr_department.name)
-        self.assertEqual(response.data['type'], Contract.Type.CONTRACTOR)
-        self.assertEqual(response.data['start_date'], contract.start_date.isoformat())
-        self.assertEqual(response.data['end_date'], contract.end_date.isoformat())
-        self.assertEqual(response.data['salary_ron'], '7250.50')
-        self.assertEqual(response.data['status'], 'EXPIRING')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['id'] == contract.id
+        assert response.data['employee_name'] == 'Ana Pop'
+        assert response.data['department'] == self.hr_department.name
+        assert response.data['type'] == Contract.Type.CONTRACTOR
+        assert response.data['start_date'] == contract.start_date.isoformat()
+        assert response.data['end_date'] == contract.end_date.isoformat()
+        assert response.data['salary_ron'] == '7250.50'
+        assert response.data['status'] == 'EXPIRING'
 
     def test_get_contract_detail_requires_hr_or_ceo(self):
         employee = baker.make(User, role=User.Role.SALES, department=self.hr_department)
@@ -368,7 +368,7 @@ class TestHrContractsEndpoint(HrEndpointsTestCase):
 
         response = client.get(f'/api/contracts/{contract.id}/')
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 class TestHrUpcomingEventsEndpoint(HrEndpointsTestCase):
@@ -416,21 +416,21 @@ class TestHrUpcomingEventsEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get('/api/hr/upcoming-events/?days=30')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         events = response.data['events']
-        self.assertGreaterEqual(len(events), 3)
-        self.assertEqual([event['date'] for event in events], sorted(event['date'] for event in events))
+        assert len(events) >= 3
+        assert [event['date'] for event in events] == sorted(event['date'] for event in events)
 
         contract_event = next(event for event in events if event['type'] == 'CONTRACT_EXPIRY')
         onboarding_event = next(event for event in events if event['type'] == 'ONBOARDING')
         payroll_event = next(event for event in events if event['type'] == 'PAYROLL_PROCESSING')
 
-        self.assertTrue(contract_event['is_warning'])
-        self.assertEqual(contract_event['link'], '/hr/contracts')
-        self.assertEqual(contract_event['dot_color'], 'red')
-        self.assertEqual(onboarding_event['dot_color'], 'blue')
-        self.assertEqual(payroll_event['dot_color'], 'blue')
-        self.assertIn('unpaid payroll', payroll_event['description'])
+        assert contract_event['is_warning']
+        assert contract_event['link'] == '/hr/contracts'
+        assert contract_event['dot_color'] == 'red'
+        assert onboarding_event['dot_color'] == 'blue'
+        assert payroll_event['dot_color'] == 'blue'
+        assert 'unpaid payroll' in payroll_event['description']
 
     def test_get_upcoming_events_requires_hr_or_ceo(self):
         employee = baker.make(User, role=User.Role.SALES, department=self.hr_department)
@@ -439,7 +439,7 @@ class TestHrUpcomingEventsEndpoint(HrEndpointsTestCase):
 
         response = client.get('/api/hr/upcoming-events/')
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 class TestHrPayrollEndpoint(HrEndpointsTestCase):
@@ -459,12 +459,12 @@ class TestHrPayrollEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get('/api/payroll/?month=2026-04&bonus=500&deductions=200')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         row = response.data['payroll'][0]
-        self.assertEqual(Decimal(row['base_salary_ron']), Decimal('4000.00'))
-        self.assertEqual(Decimal(row['bonus_ron']), Decimal('500'))
-        self.assertEqual(Decimal(row['deductions_ron']), Decimal('200'))
-        self.assertEqual(Decimal(row['net_salary_ron']), Decimal('4300.00'))
+        assert Decimal(row['base_salary_ron']) == Decimal('4000.00')
+        assert Decimal(row['bonus_ron']) == Decimal('500')
+        assert Decimal(row['deductions_ron']) == Decimal('200')
+        assert Decimal(row['net_salary_ron']) == Decimal('4300.00')
 
     def test_payroll_deduction_formula_net_equals_base_plus_bonus_minus_deductions(self):
         month_date = timezone.datetime(2026, 6, 1).date()
@@ -480,7 +480,7 @@ class TestHrPayrollEndpoint(HrEndpointsTestCase):
 
         response = self.hr_client.get('/api/payroll/?month=2026-06&bonus=150.25&deductions=99.75')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         row = response.data['payroll'][0]
 
         base = Decimal(row['base_salary_ron'])
@@ -488,7 +488,7 @@ class TestHrPayrollEndpoint(HrEndpointsTestCase):
         deductions = Decimal(row['deductions_ron'])
         net = Decimal(row['net_salary_ron'])
 
-        self.assertEqual(net, base + bonus - deductions)
+        assert net == base + bonus - deductions
 
 
 class TestCeoHrSummaryEndpoint(APITestCase):
@@ -506,10 +506,10 @@ class TestCeoHrSummaryEndpoint(APITestCase):
 
         response = client.get('/api/hr/ceo-summary/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         by_department = {row['department']: row for row in response.data['department_headcount']}
 
-        self.assertEqual(by_department['IT Support']['total'], 2)
-        self.assertEqual(by_department['IT Support']['active'], 1)
-        self.assertEqual(by_department['Sales & Marketing']['total'], 1)
-        self.assertEqual(by_department['Sales & Marketing']['active'], 1)
+        assert by_department['IT Support']['total'] == 2
+        assert by_department['IT Support']['active'] == 1
+        assert by_department['Sales & Marketing']['total'] == 1
+        assert by_department['Sales & Marketing']['active'] == 1

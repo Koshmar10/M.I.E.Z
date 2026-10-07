@@ -24,15 +24,15 @@ class ITDashboardTests(APITestCase):
         """Only CEO and IT should access the IT dashboard"""
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.get('/api/it/dashboard/')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
         self.client.force_authenticate(user=self.ceo)
         response = self.client.get('/api/it/dashboard/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
         self.client.force_authenticate(user=self.it_user)
         response = self.client.get('/api/it/dashboard/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
     def test_dashboard_metrics(self):
         """Test that counts and SLA math are correct"""
@@ -58,21 +58,21 @@ class ITDashboardTests(APITestCase):
         response = self.client.get('/api/it/dashboard/')
         data = response.data
 
-        self.assertEqual(data['open_ticket'], 2)
-        self.assertEqual(data['ceo_it_summary']['critical_open'], 1)
-        self.assertEqual(data['ceo_it_summary']['avg_resolution_time_hrs'], 4.0)
-        self.assertEqual(data['ceo_it_summary']['sla_met_percentage'], 50.0)
+        assert data['open_ticket'] == 2
+        assert data['ceo_it_summary']['critical_open'] == 1
+        assert data['ceo_it_summary']['avg_resolution_time_hrs'] == 4.0
+        assert data['ceo_it_summary']['sla_met_percentage'] == 50.0
 
     def test_model_auto_resolve_timestamp(self):
         """Test that out save() method handles resolved_at correctly"""
         ticket = Ticket.objects.create(ticket_number='T99', status=Ticket.Status.OPEN)
-        self.assertIsNone(ticket.resolved_at)
+        assert ticket.resolved_at is None
 
         ticket.status = Ticket.Status.RESOLVED
         ticket.resolved_at = timezone.now()
         ticket.save()
 
-        self.assertIsNotNone(ticket.resolved_at)
+        assert ticket.resolved_at is not None
 
     def test_ticket_trend_returns_last_six_weeks_with_opened_and_closed_counts(self):
         self.client.force_authenticate(user=self.ceo)
@@ -108,35 +108,29 @@ class ITDashboardTests(APITestCase):
 
         response = self.client.get('/api/it/ticket-trend/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('weeks', response.data)
-        self.assertEqual(len(response.data['weeks']), 6)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'weeks' in response.data
+        assert len(response.data['weeks']) == 6
 
         week_map = {row['week_start']: row for row in response.data['weeks']}
-        self.assertEqual(
-            response.data['weeks'][0]['week_start'],
-            five_weeks_ago_start.date().isoformat(),
-        )
-        self.assertEqual(
-            response.data['weeks'][-1]['week_start'],
-            current_week_start.date().isoformat(),
-        )
+        assert response.data['weeks'][0]['week_start'] == five_weeks_ago_start.date().isoformat()
+        assert response.data['weeks'][-1]['week_start'] == current_week_start.date().isoformat()
 
-        self.assertEqual(week_map[five_weeks_ago_start.date().isoformat()]['opened_count'], 1)
-        self.assertEqual(week_map[five_weeks_ago_start.date().isoformat()]['closed_count'], 0)
+        assert week_map[five_weeks_ago_start.date().isoformat()]['opened_count'] == 1
+        assert week_map[five_weeks_ago_start.date().isoformat()]['closed_count'] == 0
 
-        self.assertEqual(week_map[one_week_ago_start.date().isoformat()]['opened_count'], 1)
-        self.assertEqual(week_map[one_week_ago_start.date().isoformat()]['closed_count'], 1)
+        assert week_map[one_week_ago_start.date().isoformat()]['opened_count'] == 1
+        assert week_map[one_week_ago_start.date().isoformat()]['closed_count'] == 1
 
-        self.assertEqual(week_map[current_week_start.date().isoformat()]['opened_count'], 1)
-        self.assertEqual(week_map[current_week_start.date().isoformat()]['closed_count'], 1)
+        assert week_map[current_week_start.date().isoformat()]['opened_count'] == 1
+        assert week_map[current_week_start.date().isoformat()]['closed_count'] == 1
 
     def test_ticket_trend_forbidden_for_non_it_and_non_ceo(self):
         self.client.force_authenticate(user=self.hr_user)
 
         response = self.client.get('/api/it/ticket-trend/')
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 class TicketListViewTests(APITestCase):
@@ -182,16 +176,16 @@ class TicketListViewTests(APITestCase):
     def test_ticket_list_requires_it_or_ceo_role(self):
         self.client.force_authenticate(user=self.sales_user)
         response = self.client.get('/api/tickets/')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_ticket_list_includes_total_count(self):
         self.client.force_authenticate(user=self.it_user)
         response = self.client.get('/api/tickets/?page_size=2')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['total_count'], 3)
-        self.assertEqual(response.data['count'], 3)
-        self.assertEqual(len(response.data['results']), 2)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['total_count'] == 3
+        assert response.data['count'] == 3
+        assert len(response.data['results']) == 2
 
     def test_ticket_list_filters_with_django_filter_params(self):
         self.client.force_authenticate(user=self.it_user)
@@ -200,18 +194,18 @@ class TicketListViewTests(APITestCase):
             f'/api/tickets/?category={self.it_department.id}&status=OPEN&assigned_to={self.it_user.id}'
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['total_count'], 1)
-        self.assertEqual(response.data['results'][0]['ticket_number'], 'IT-001')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['total_count'] == 1
+        assert response.data['results'][0]['ticket_number'] == 'IT-001'
 
     def test_ticket_list_search_filters_results(self):
         self.client.force_authenticate(user=self.it_user)
 
         response = self.client.get('/api/tickets/?search=mailbox')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['total_count'], 1)
-        self.assertEqual(response.data['results'][0]['ticket_number'], 'IT-002')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['total_count'] == 1
+        assert response.data['results'][0]['ticket_number'] == 'IT-002'
 
 
 class TicketApiTests(APITestCase):
@@ -256,16 +250,16 @@ class TicketApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(first_response.status_code, 201)
-        self.assertEqual(second_response.status_code, 201)
-        self.assertEqual(first_response.data['status'], Ticket.Status.OPEN)
-        self.assertEqual(second_response.data['status'], Ticket.Status.OPEN)
-        self.assertTrue(first_response.data['ticket_number'].startswith('TKT-'))
-        self.assertTrue(second_response.data['ticket_number'].startswith('TKT-'))
+        assert first_response.status_code == 201
+        assert second_response.status_code == 201
+        assert first_response.data['status'] == Ticket.Status.OPEN
+        assert second_response.data['status'] == Ticket.Status.OPEN
+        assert first_response.data['ticket_number'].startswith('TKT-')
+        assert second_response.data['ticket_number'].startswith('TKT-')
 
         first_number = int(first_response.data['ticket_number'].split('-')[1])
         second_number = int(second_response.data['ticket_number'].split('-')[1])
-        self.assertEqual(second_number, first_number + 1)
+        assert second_number == first_number + 1
 
     def test_post_tickets_missing_title_returns_400_with_title_key(self):
         self.client.force_authenticate(user=self.it_user)
@@ -279,8 +273,8 @@ class TicketApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('title', response.data['field_errors'])
+        assert response.status_code == 400
+        assert 'title' in response.data['field_errors']
 
     def test_post_tickets_missing_description_returns_400(self):
         self.client.force_authenticate(user=self.it_user)
@@ -294,8 +288,8 @@ class TicketApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('description', response.data['field_errors'])
+        assert response.status_code == 400
+        assert 'description' in response.data['field_errors']
 
     def test_get_tickets_returns_full_list_sorted_by_created_at_desc(self):
         self.client.force_authenticate(user=self.it_user)
@@ -321,9 +315,9 @@ class TicketApiTests(APITestCase):
 
         response = self.client.get('/api/tickets/?page_size=100')
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         numbers = [item['ticket_number'] for item in response.data['results']]
-        self.assertEqual(numbers[:2], ['TKT-00002', 'TKT-00001'])
+        assert numbers[:2] == ['TKT-00002', 'TKT-00001']
 
     def test_get_tickets_with_category_filters_correctly(self):
         self.client.force_authenticate(user=self.it_user)
@@ -351,9 +345,9 @@ class TicketApiTests(APITestCase):
 
         response = self.client.get('/api/tickets/?category=Hardware&page_size=100')
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data['results']), 1)
-        self.assertEqual(response.data['results'][0]['ticket_number'], 'TKT-00010')
+        assert response.status_code == 200
+        assert len(response.data['results']) == 1
+        assert response.data['results'][0]['ticket_number'] == 'TKT-00010'
 
     def test_get_tickets_with_assigned_to_me_returns_only_requesting_user_tickets(self):
         self.client.force_authenticate(user=self.it_user)
@@ -385,9 +379,9 @@ class TicketApiTests(APITestCase):
 
         response = self.client.get('/api/tickets/?assigned_to=me&page_size=100')
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data['results']), 1)
-        self.assertEqual(response.data['results'][0]['ticket_number'], 'TKT-00020')
+        assert response.status_code == 200
+        assert len(response.data['results']) == 1
+        assert response.data['results'][0]['ticket_number'] == 'TKT-00020'
 
     def test_patch_ticket_status_transitions_open_to_in_progress_to_resolved_with_auto_assignment(self):
         self.client.force_authenticate(user=self.it_user)
@@ -403,13 +397,13 @@ class TicketApiTests(APITestCase):
         to_in_progress = self.client.patch(
             f'/api/tickets/{ticket.id}/', {'status': Ticket.Status.IN_PROGRESS}, format='json'
         )
-        self.assertEqual(to_in_progress.status_code, 200)
-        self.assertEqual(to_in_progress.data['status'], Ticket.Status.IN_PROGRESS)
-        self.assertEqual(to_in_progress.data['assigned_to'], self.it_user.id)
+        assert to_in_progress.status_code == 200
+        assert to_in_progress.data['status'] == Ticket.Status.IN_PROGRESS
+        assert to_in_progress.data['assigned_to'] == self.it_user.id
 
         to_resolved = self.client.patch(f'/api/tickets/{ticket.id}/', {'status': Ticket.Status.RESOLVED}, format='json')
-        self.assertEqual(to_resolved.status_code, 200)
-        self.assertEqual(to_resolved.data['status'], Ticket.Status.RESOLVED)
+        assert to_resolved.status_code == 200
+        assert to_resolved.data['status'] == Ticket.Status.RESOLVED
 
     def test_patch_ticket_sets_resolved_at_automatically_when_resolved(self):
         self.client.force_authenticate(user=self.it_user)
@@ -425,11 +419,11 @@ class TicketApiTests(APITestCase):
 
         response = self.client.patch(f'/api/tickets/{ticket.id}/', {'status': Ticket.Status.RESOLVED}, format='json')
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNotNone(response.data['resolved_at'])
+        assert response.status_code == 200
+        assert response.data['resolved_at'] is not None
 
         ticket.refresh_from_db()
-        self.assertIsNotNone(ticket.resolved_at)
+        assert ticket.resolved_at is not None
 
     def test_get_it_dashboard_avg_resolution_time_hours_computed_correctly(self):
         self.client.force_authenticate(user=self.ceo_user)
@@ -456,8 +450,8 @@ class TicketApiTests(APITestCase):
 
         response = self.client.get('/api/it/dashboard/')
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['ceo_it_summary']['avg_resolution_time_hrs'], 4.0)
+        assert response.status_code == 200
+        assert response.data['ceo_it_summary']['avg_resolution_time_hrs'] == 4.0
 
     def test_get_it_dashboard_sla_compliance_counts_tickets_resolved_within_4_hours(self):
         self.client.force_authenticate(user=self.ceo_user)
@@ -484,8 +478,8 @@ class TicketApiTests(APITestCase):
 
         response = self.client.get('/api/it/dashboard/')
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['ceo_it_summary']['sla_met_percentage'], 50.0)
+        assert response.status_code == 200
+        assert response.data['ceo_it_summary']['sla_met_percentage'] == 50.0
 
 
 class AssetApiTests(APITestCase):
@@ -512,27 +506,25 @@ class AssetApiTests(APITestCase):
 
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.get(self.assets_url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
         self.client.force_authenticate(user=self.it_user)
         response = self.client.get(self.assets_url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
-        self.assertTrue(
-            {
-                'id',
-                'name',
-                'serial_number',
-                'category',
-                'assigned_to',
-                'assigned_to_username',
-                'assigned_to_name',
-                'status',
-                'notes',
-                'created_at',
-            }.issubset(response.data[0].keys())
-        )
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data) == 2
+        assert {
+            'id',
+            'name',
+            'serial_number',
+            'category',
+            'assigned_to',
+            'assigned_to_username',
+            'assigned_to_name',
+            'status',
+            'notes',
+            'created_at',
+        }.issubset(response.data[0].keys())
 
     def test_create_asset_returns_serialized_asset(self):
         payload = {
@@ -547,12 +539,12 @@ class AssetApiTests(APITestCase):
         self.client.force_authenticate(user=self.ceo)
         response = self.client.post(self.assets_url, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['name'], payload['name'])
-        self.assertEqual(response.data['serial_number'], payload['serial_number'])
-        self.assertEqual(response.data['assigned_to'], self.ceo.id)
-        self.assertEqual(response.data['assigned_to_username'], self.ceo.username)
-        self.assertEqual(response.data['assigned_to_name'], self.ceo.get_full_name() or self.ceo.username)
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['name'] == payload['name']
+        assert response.data['serial_number'] == payload['serial_number']
+        assert response.data['assigned_to'] == self.ceo.id
+        assert response.data['assigned_to_username'] == self.ceo.username
+        assert response.data['assigned_to_name'] == (self.ceo.get_full_name() or self.ceo.username)
 
     def test_create_asset_rejects_duplicate_serial_number(self):
         baker.make(Asset, serial_number='ASSET-TEST-002')
@@ -569,8 +561,8 @@ class AssetApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('serial_number', response.data['field_errors'])
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'serial_number' in response.data['field_errors']
 
     def test_detail_update_and_delete_work_for_it_and_ceo(self):
         asset = baker.make(
@@ -585,7 +577,7 @@ class AssetApiTests(APITestCase):
 
         self.client.force_authenticate(user=self.inventory_user)
         response = self.client.patch(detail_url, {'name': 'Blocked Update'}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
         self.client.force_authenticate(user=self.it_user)
         response = self.client.patch(
@@ -599,18 +591,18 @@ class AssetApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['name'], 'Updated Laptop')
-        self.assertEqual(response.data['status'], Asset.Status.MAINTENANCE)
-        self.assertEqual(response.data['assigned_to'], self.ceo.id)
-        self.assertEqual(response.data['assigned_to_username'], self.ceo.username)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['name'] == 'Updated Laptop'
+        assert response.data['status'] == Asset.Status.MAINTENANCE
+        assert response.data['assigned_to'] == self.ceo.id
+        assert response.data['assigned_to_username'] == self.ceo.username
 
         response = self.client.delete(detail_url)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Asset.objects.filter(id=asset.id).exists())
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        assert not Asset.objects.filter(id=asset.id).exists()
 
     def test_detail_returns_404_for_missing_asset(self):
         self.client.force_authenticate(user=self.ceo)
         response = self.client.get(reverse('asset_detail', kwargs={'id': 999999}))
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        assert response.status_code == status.HTTP_404_NOT_FOUND

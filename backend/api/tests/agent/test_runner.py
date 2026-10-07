@@ -53,8 +53,8 @@ class AgentRunnerLoopTests(TestCase):
         runner = AgentRunner(self.ceo)
         result = runner.run('hello')
 
-        self.assertEqual(result['response'], 'final answer')
-        self.assertEqual(result['tool_calls_made'], [])
+        assert result['response'] == 'final answer'
+        assert result['tool_calls_made'] == []
         client.messages.create.assert_called_once()
 
     @patch('api.agent.runner.Anthropic')
@@ -75,26 +75,26 @@ class AgentRunnerLoopTests(TestCase):
         runner = AgentRunner(self.ceo, tools=[tool])
         result = runner.run('summarize sales')
 
-        self.assertEqual(result['response'], 'sales summary ready')
-        self.assertEqual(calls, [('sales', 'ceo-loop')])
-        self.assertEqual(len(result['tool_calls_made']), 1)
-        self.assertEqual(result['tool_calls_made'][0]['tool_name'], 'get_dashboard_summary')
-        self.assertIsNone(result['tool_calls_made'][0]['error'])
-        self.assertIn('module', result['tool_calls_made'][0]['result'])
-        self.assertEqual(client.messages.create.call_count, 2)
+        assert result['response'] == 'sales summary ready'
+        assert calls == [('sales', 'ceo-loop')]
+        assert len(result['tool_calls_made']) == 1
+        assert result['tool_calls_made'][0]['tool_name'] == 'get_dashboard_summary'
+        assert result['tool_calls_made'][0]['error'] is None
+        assert 'module' in result['tool_calls_made'][0]['result']
+        assert client.messages.create.call_count == 2
 
         second_call_messages = client.messages.create.call_args_list[1].kwargs['messages']
-        self.assertEqual(second_call_messages[-1]['role'], 'user')
-        self.assertEqual(second_call_messages[-1]['content'][0]['type'], 'tool_result')
-        self.assertFalse(second_call_messages[-1]['content'][0]['is_error'])
+        assert second_call_messages[-1]['role'] == 'user'
+        assert second_call_messages[-1]['content'][0]['type'] == 'tool_result'
+        assert not second_call_messages[-1]['content'][0]['is_error']
 
     def test_get_system_prompt_includes_report_catalog_for_manager(self):
         runner = AgentRunner(self.hr_manager)
 
         prompt = runner.get_system_prompt()
 
-        self.assertIn('Available report slugs:', prompt)
-        self.assertIn('hr-headcount-runner (HR Headcount)', prompt)
+        assert 'Available report slugs:' in prompt
+        assert 'hr-headcount-runner (HR Headcount)' in prompt
 
     def test_get_system_prompt_includes_user_full_name(self):
         user = User.objects.create_user(
@@ -108,35 +108,35 @@ class AgentRunnerLoopTests(TestCase):
 
         prompt = runner.get_system_prompt()
 
-        self.assertIn('Ana Mihai', prompt)
+        assert 'Ana Mihai' in prompt
 
     def test_get_system_prompt_falls_back_to_username_when_no_name(self):
         runner = AgentRunner(self.ceo)
 
         prompt = runner.get_system_prompt()
 
-        self.assertIn('ceo-loop', prompt)
+        assert 'ceo-loop' in prompt
 
     def test_get_system_prompt_includes_current_page(self):
         runner = AgentRunner(self.ceo, current_page='/sales/orders')
 
         prompt = runner.get_system_prompt()
 
-        self.assertIn('/sales/orders', prompt)
+        assert '/sales/orders' in prompt
 
     def test_get_system_prompt_omits_page_line_when_not_provided(self):
         runner = AgentRunner(self.ceo)
 
         prompt = runner.get_system_prompt()
 
-        self.assertNotIn('Current page:', prompt)
+        assert 'Current page:' not in prompt
 
     def test_get_system_prompt_includes_position_when_set(self):
         runner = AgentRunner(self.hr_manager)
 
         prompt = runner.get_system_prompt()
 
-        self.assertIn('HR Manager', prompt)
+        assert 'HR Manager' in prompt
 
     def test_get_system_prompt_includes_department_when_set(self):
         from api.models import Department
@@ -152,14 +152,14 @@ class AgentRunnerLoopTests(TestCase):
 
         prompt = runner.get_system_prompt()
 
-        self.assertIn('Human Resources', prompt)
+        assert 'Human Resources' in prompt
 
     def test_get_tools_for_user_includes_generate_report_for_manager(self):
         runner = AgentRunner(self.hr_manager, tools=get_registry().get_all())
 
         tool_names = [tool.name for tool in runner.get_tools_for_user()]
 
-        self.assertIn('generate_report', tool_names)
+        assert 'generate_report' in tool_names
 
     @patch('api.agent.runner.Anthropic')
     def test_run_multiple_sequential_tool_calls_resolved_correctly(self, mock_anthropic):
@@ -190,10 +190,10 @@ class AgentRunnerLoopTests(TestCase):
 
         result = runner.run('do the sequence')
 
-        self.assertEqual(result['response'], 'all done')
-        self.assertEqual(execution_order, [('first', 'one'), ('second', 'two')])
-        self.assertEqual([item['tool_name'] for item in result['tool_calls_made']], ['first_tool', 'second_tool'])
-        self.assertEqual(client.messages.create.call_count, 3)
+        assert result['response'] == 'all done'
+        assert execution_order == [('first', 'one'), ('second', 'two')]
+        assert [item['tool_name'] for item in result['tool_calls_made']] == ['first_tool', 'second_tool']
+        assert client.messages.create.call_count == 3
 
     @patch('api.agent.runner.Anthropic')
     def test_run_max_iterations_reached_returns_fallback_message(self, mock_anthropic):
@@ -211,9 +211,9 @@ class AgentRunnerLoopTests(TestCase):
 
         result = runner.run('keep going')
 
-        self.assertIn('could not complete', result['response'])
-        self.assertEqual(len(result['tool_calls_made']), 2)
-        self.assertEqual(client.messages.create.call_count, 2)
+        assert 'could not complete' in result['response']
+        assert len(result['tool_calls_made']) == 2
+        assert client.messages.create.call_count == 2
 
     @patch('api.agent.runner.Anthropic')
     def test_run_tool_raises_exception_error_captured_in_tool_result(self, mock_anthropic):
@@ -229,10 +229,10 @@ class AgentRunnerLoopTests(TestCase):
 
         result = runner.run('break it')
 
-        self.assertEqual(result['response'], 'handled')
-        self.assertEqual(len(result['tool_calls_made']), 1)
-        self.assertEqual(result['tool_calls_made'][0]['error'], 'boom')
+        assert result['response'] == 'handled'
+        assert len(result['tool_calls_made']) == 1
+        assert result['tool_calls_made'][0]['error'] == 'boom'
 
         second_call_messages = client.messages.create.call_args_list[1].kwargs['messages']
-        self.assertTrue(second_call_messages[-1]['content'][0]['is_error'])
-        self.assertIn('boom', second_call_messages[-1]['content'][0]['content'])
+        assert second_call_messages[-1]['content'][0]['is_error']
+        assert 'boom' in second_call_messages[-1]['content'][0]['content']

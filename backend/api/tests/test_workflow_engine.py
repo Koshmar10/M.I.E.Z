@@ -23,15 +23,15 @@ class WorkflowEngineTests(TestCase):
         with patch('api.workflow_engine._notify_manager', side_effect=boom):
             result = execute_workflow(self.workflow, 'DAILY_AT_TIME', {'message': 'x', 'link': '/'})
 
-        self.assertFalse(result['success'])
+        assert not result['success']
         log = result['actions_log']
         # NOTIFY_MANAGER failed
-        self.assertFalse(log[0]['success'])
-        self.assertIn('simulated failure', log[0]['message'])
+        assert not log[0]['success']
+        assert 'simulated failure' in log[0]['message']
         # EMAIL_CEO still ran
-        self.assertTrue(log[1]['success'])
+        assert log[1]['success']
         # LOG_TO_AUDIT_TRAIL still ran
-        self.assertTrue(log[2]['success'])
+        assert log[2]['success']
 
     def test_engine_creates_notifications_for_managers(self):
         workflow = make_workflow(actions=['NOTIFY_MANAGER'])
@@ -40,10 +40,10 @@ class WorkflowEngineTests(TestCase):
         after = Notification.objects.count()
         # Should have created one notification per CEO/HR user
         managers = User.objects.filter(role__in=('HR', 'CEO')).count()
-        self.assertEqual(after - before, managers)
+        assert after - before == managers
 
     def test_engine_updates_last_triggered_at(self):
-        self.assertIsNone(self.workflow.last_triggered_at)
+        assert self.workflow.last_triggered_at is None
         execute_workflow(self.workflow, 'DAILY_AT_TIME', {'message': 'x', 'link': '/'})
         self.workflow.refresh_from_db()
-        self.assertIsNotNone(self.workflow.last_triggered_at)
+        assert self.workflow.last_triggered_at is not None

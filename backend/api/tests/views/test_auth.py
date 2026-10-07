@@ -21,29 +21,29 @@ class AuthTests(APITestCase):
         data = {'username': self.username, 'password': self.password}
         response = self.client.post(self.login_url, data, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn(settings.SIMPLE_JWT['AUTH_COOKIE'], response.cookies)
-        self.assertIn(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'], response.cookies)
-        self.assertTrue(response.cookies[settings.SIMPLE_JWT['AUTH_COOKIE']]['httponly'])
+        assert response.status_code == status.HTTP_200_OK
+        assert settings.SIMPLE_JWT['AUTH_COOKIE'] in response.cookies
+        assert settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'] in response.cookies
+        assert response.cookies[settings.SIMPLE_JWT['AUTH_COOKIE']]['httponly']
 
     def test_protected_route_access(self):
         self.client.post(self.login_url, {'username': self.username, 'password': self.password})
         response = self.client.get(self.me_url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
         # Ensure expected fields exist in the JSON response. The user model may not
         # always expose a `role` attribute, so assert presence of core fields.
-        self.assertEqual(data.get('username'), self.username)
-        self.assertIn('email', data)
-        self.assertIn('message', data)
+        assert data.get('username') == self.username
+        assert 'email' in data
+        assert 'message' in data
 
     def test_access_denied_without_cookie(self):
         response = self.client.get(self.me_url)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_logout_clears_cookies(self):
         self.client.post(self.login_url, {'username': self.username, 'password': self.password})
 
         response = self.client.post(self.logout_url)
         access_cookie = response.cookies.get(settings.SIMPLE_JWT['AUTH_COOKIE'])
-        self.assertEqual(access_cookie.value, '')
+        assert access_cookie.value == ''

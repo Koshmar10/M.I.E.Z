@@ -1,5 +1,6 @@
 """Tests for api/views/sales.py: orders, invoices, customers and sales analytics."""
 
+import re
 from datetime import timedelta
 from decimal import Decimal
 
@@ -71,45 +72,45 @@ class OrderListViewTests(APITestCase):
         )
 
     def test_order_number_is_auto_generated_with_hash_format(self):
-        self.assertRegex(self.order_1.order_number, r'^#\d{4}$')
+        assert re.search(r'^#\d{4}$', self.order_1.order_number)
 
     def test_orders_list_supports_search_status_channel_and_includes_totals(self):
         self.client.force_authenticate(user=self.sales_user)
 
         response = self.client.get('/api/orders/?search=Acme&status=PROCESSING&channel=WEBSITE')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['total_count'], 1)
-        self.assertEqual(Decimal(response.data['total_ron_sum']), Decimal('120.50'))
-        self.assertEqual(len(response.data['results']), 1)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['total_count'] == 1
+        assert Decimal(response.data['total_ron_sum']) == Decimal('120.50')
+        assert len(response.data['results']) == 1
 
         row = response.data['results'][0]
-        self.assertIn('order_number', row)
-        self.assertEqual(row['customer_name'], 'Acme SRL')
-        self.assertEqual(Decimal(row['value_ron']), Decimal('120.50'))
-        self.assertEqual(row['status'], Order.Status.PROCESSING)
-        self.assertEqual(row['channel'], Order.Channel.WEBSITE)
+        assert 'order_number' in row
+        assert row['customer_name'] == 'Acme SRL'
+        assert Decimal(row['value_ron']) == Decimal('120.50')
+        assert row['status'] == Order.Status.PROCESSING
+        assert row['channel'] == Order.Channel.WEBSITE
 
     def test_orders_list_is_paginated_and_includes_total_sum_for_filtered_queryset(self):
         self.client.force_authenticate(user=self.ceo_user)
 
         response = self.client.get('/api/orders/?search=SRL&page_size=2')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['total_count'], 3)
-        self.assertEqual(Decimal(response.data['total_ron_sum']), Decimal('240.50'))
-        self.assertEqual(len(response.data['results']), 2)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['total_count'] == 3
+        assert Decimal(response.data['total_ron_sum']) == Decimal('240.50')
+        assert len(response.data['results']) == 2
 
     def test_order_detail_includes_line_items_for_modal(self):
         self.client.force_authenticate(user=self.sales_user)
 
         response = self.client.get(f'/api/orders/{self.order_1.id}/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['order_number'], self.order_1.order_number)
-        self.assertEqual(response.data['customer_name'], 'Acme SRL')
-        self.assertEqual(len(response.data['items']), 2)
-        self.assertIn('line_total_ron', response.data['items'][0])
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['order_number'] == self.order_1.order_number
+        assert response.data['customer_name'] == 'Acme SRL'
+        assert len(response.data['items']) == 2
+        assert 'line_total_ron' in response.data['items'][0]
 
     def test_orders_endpoints_forbid_non_sales_roles(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -117,8 +118,8 @@ class OrderListViewTests(APITestCase):
         list_response = self.client.get('/api/orders/')
         detail_response = self.client.get(f'/api/orders/{self.order_1.id}/')
 
-        self.assertEqual(list_response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(detail_response.status_code, status.HTTP_403_FORBIDDEN)
+        assert list_response.status_code == status.HTTP_403_FORBIDDEN
+        assert detail_response.status_code == status.HTTP_403_FORBIDDEN
 
 
 class SalesDashboardKpiTests(APITestCase):
@@ -191,23 +192,23 @@ class SalesDashboardKpiTests(APITestCase):
                 return 100.0 if today_numeric > 0 else 0.0
             return round(((today_numeric - yesterday_numeric) / yesterday_numeric) * 100, 2)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['orders_today'], today_orders)
-        self.assertEqual(Decimal(response.data['revenue_today_ron']), today_revenue)
-        self.assertEqual(response.data['pending_orders'], processing_orders)
-        self.assertEqual(response.data['returns_this_week'], returns_week)
-        self.assertEqual(response.data['pct_changes']['orders'], pct_change(today_orders, yesterday_orders))
-        self.assertEqual(response.data['pct_changes']['revenue'], pct_change(today_revenue, yesterday_revenue))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['orders_today'] == today_orders
+        assert Decimal(response.data['revenue_today_ron']) == today_revenue
+        assert response.data['pending_orders'] == processing_orders
+        assert response.data['returns_this_week'] == returns_week
+        assert response.data['pct_changes']['orders'] == pct_change(today_orders, yesterday_orders)
+        assert response.data['pct_changes']['revenue'] == pct_change(today_revenue, yesterday_revenue)
 
     def test_sales_dashboard_kpis_allows_ceo(self):
         self.client.force_authenticate(user=self.ceo_user)
         response = self.client.get('/api/sales/dashboard/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
     def test_sales_dashboard_kpis_forbids_other_roles(self):
         self.client.force_authenticate(user=self.hr_user)
         response = self.client.get('/api/sales/dashboard/')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 class SalesAnalyticsTask3Tests(APITestCase):
@@ -263,14 +264,14 @@ class SalesAnalyticsTask3Tests(APITestCase):
 
         response = self.client.get('/api/sales/daily-orders/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('days', response.data)
-        self.assertEqual(len(response.data['days']), 7)
+        assert response.status_code == status.HTTP_200_OK
+        assert 'days' in response.data
+        assert len(response.data['days']) == 7
 
         counts_by_date = {row['date']: row['orders_count'] for row in response.data['days']}
-        self.assertEqual(counts_by_date[five_days_ago.isoformat()], 2)
-        self.assertEqual(counts_by_date[two_days_ago.isoformat()], 1)
-        self.assertEqual(counts_by_date[today.isoformat()], 0)
+        assert counts_by_date[five_days_ago.isoformat()] == 2
+        assert counts_by_date[two_days_ago.isoformat()] == 1
+        assert counts_by_date[today.isoformat()] == 0
 
     def test_top_products_uses_current_iso_week_and_sorts_by_units_sold(self):
         self.client.force_authenticate(user=self.ceo_user)
@@ -287,16 +288,16 @@ class SalesAnalyticsTask3Tests(APITestCase):
 
         response = self.client.get('/api/sales/top-products/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['week_start'], week_start.isoformat())
-        self.assertEqual(response.data['week_end'], week_end.isoformat())
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['week_start'] == week_start.isoformat()
+        assert response.data['week_end'] == week_end.isoformat()
 
         products = response.data['products']
-        self.assertEqual(len(products), 2)
-        self.assertEqual(products[0]['product_name'], 'Widget A')
-        self.assertEqual(products[0]['units_sold'], 5)
-        self.assertEqual(products[1]['product_name'], 'Widget B')
-        self.assertEqual(products[1]['units_sold'], 5)
+        assert len(products) == 2
+        assert products[0]['product_name'] == 'Widget A'
+        assert products[0]['units_sold'] == 5
+        assert products[1]['product_name'] == 'Widget B'
+        assert products[1]['units_sold'] == 5
 
     def test_task3_endpoints_forbid_non_sales_roles(self):
         self.client.force_authenticate(user=self.hr_user)
@@ -304,8 +305,8 @@ class SalesAnalyticsTask3Tests(APITestCase):
         daily_response = self.client.get('/api/sales/daily-orders/')
         top_response = self.client.get('/api/sales/top-products/')
 
-        self.assertEqual(daily_response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(top_response.status_code, status.HTTP_403_FORBIDDEN)
+        assert daily_response.status_code == status.HTTP_403_FORBIDDEN
+        assert top_response.status_code == status.HTTP_403_FORBIDDEN
 
 
 class InvoiceListViewTests(APITestCase):
@@ -340,30 +341,30 @@ class InvoiceListViewTests(APITestCase):
 
         response = self.client.get('/api/invoices/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('paid_total', response.data)
-        self.assertIn('pending_total', response.data)
-        self.assertIn('overdue_total', response.data)
-        self.assertEqual(Decimal(response.data['paid_total']), Decimal('100.00'))
-        self.assertEqual(Decimal(response.data['overdue_total']), Decimal('200.00'))
-        self.assertEqual(Decimal(response.data['pending_total']), Decimal('300.00'))
+        assert response.status_code == status.HTTP_200_OK
+        assert 'paid_total' in response.data
+        assert 'pending_total' in response.data
+        assert 'overdue_total' in response.data
+        assert Decimal(response.data['paid_total']) == Decimal('100.00')
+        assert Decimal(response.data['overdue_total']) == Decimal('200.00')
+        assert Decimal(response.data['pending_total']) == Decimal('300.00')
 
     def test_get_invoices_summary_totals_unaffected_by_status_filter(self):
         self.client.force_authenticate(user=self.sales_user)
 
         response = self.client.get('/api/invoices/?status=Paid')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['total_count'], 1)
-        self.assertEqual(Decimal(response.data['paid_total']), Decimal('100.00'))
-        self.assertEqual(Decimal(response.data['overdue_total']), Decimal('200.00'))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['total_count'] == 1
+        assert Decimal(response.data['paid_total']) == Decimal('100.00')
+        assert Decimal(response.data['overdue_total']) == Decimal('200.00')
 
     def test_get_invoices_forbids_non_sales_roles(self):
         self.client.force_authenticate(user=self.hr_user)
 
         response = self.client.get('/api/invoices/')
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_order_creation_auto_creates_invoice_via_signal(self):
         self.client.force_authenticate(user=self.sales_user)
@@ -380,12 +381,12 @@ class InvoiceListViewTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        assert response.status_code == status.HTTP_201_CREATED
         order = Order.objects.get(id=response.data['id'])
-        self.assertTrue(Invoice.objects.filter(order=order).exists())
+        assert Invoice.objects.filter(order=order).exists()
         invoice = Invoice.objects.get(order=order)
-        self.assertTrue(invoice.invoice_number.startswith('INV-'))
-        self.assertEqual(invoice.amount_ron, Decimal('450.00'))
+        assert invoice.invoice_number.startswith('INV-')
+        assert invoice.amount_ron == Decimal('450.00')
 
 
 class CustomerListViewTests(APITestCase):
@@ -422,28 +423,28 @@ class CustomerListViewTests(APITestCase):
 
         response = self.client.get('/api/customers/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         results = response.data['results']
         alpha = next(r for r in results if r['name'] == 'Alpha Corp')
-        self.assertEqual(alpha['orders_count'], 2)
-        self.assertEqual(alpha['tier'], Customer.Tier.GOLD)
+        assert alpha['orders_count'] == 2
+        assert alpha['tier'] == Customer.Tier.GOLD
 
     def test_customer_list_sorted_by_total_value_desc(self):
         self.client.force_authenticate(user=self.sales_user)
 
         response = self.client.get('/api/customers/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
         results = response.data['results']
         values = [Decimal(r['total_value_ron']) for r in results]
-        self.assertEqual(values, sorted(values, reverse=True))
+        assert values == sorted(values, reverse=True)
 
     def test_customer_list_forbids_non_sales_role(self):
         self.client.force_authenticate(user=self.hr_user)
 
         response = self.client.get('/api/customers/')
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 class CustomerDetailViewTests(APITestCase):
@@ -463,26 +464,26 @@ class CustomerDetailViewTests(APITestCase):
 
         response = self.client.get(f'/api/customers/{self.customer.id}/')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['name'], 'Detail Corp')
-        self.assertEqual(response.data['contact_name'], 'Jane Doe')
-        self.assertEqual(response.data['tier'], Customer.Tier.BRONZE)
-        self.assertEqual(len(response.data['orders']), 1)
-        self.assertEqual(response.data['orders'][0]['order_number'], self.order.order_number)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['name'] == 'Detail Corp'
+        assert response.data['contact_name'] == 'Jane Doe'
+        assert response.data['tier'] == Customer.Tier.BRONZE
+        assert len(response.data['orders']) == 1
+        assert response.data['orders'][0]['order_number'] == self.order.order_number
 
     def test_customer_detail_returns_404_for_missing_id(self):
         self.client.force_authenticate(user=self.sales_user)
 
         response = self.client.get('/api/customers/99999/')
 
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_customer_detail_forbids_non_sales_role(self):
         self.client.force_authenticate(user=self.hr_user)
 
         response = self.client.get(f'/api/customers/{self.customer.id}/')
 
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 # ── pytest-style tests ────────────────────────────────────────────────────────

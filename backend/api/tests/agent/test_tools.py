@@ -13,9 +13,9 @@ class AgentToolDecoratorTests(TestCase):
 
         metadata = sample_tool.agent_tool
 
-        self.assertEqual(metadata['name'], 'custom_tool')
-        self.assertEqual(metadata['description'], 'Custom tool description')
-        self.assertEqual(metadata['schema']['type'], 'object')
-        self.assertEqual(metadata['schema']['properties']['title']['type'], 'string')
-        self.assertEqual(metadata['schema']['properties']['count']['type'], 'integer')
-        self.assertEqual(metadata['schema']['required'], ['title'])
+        assert metadata['name'] == 'custom_tool'
+        assert metadata['description'] == 'Custom tool description'
+        assert metadata['schema']['type'] == 'object'
+        assert metadata['schema']['properties']['title']['type'] == 'string'
+        assert metadata['schema']['properties']['count']['type'] == 'integer'
+        assert metadata['schema']['required'] == ['title']

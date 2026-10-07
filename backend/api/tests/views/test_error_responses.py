@@ -22,11 +22,11 @@ class ApiErrorSchemaTests(APITestCase):
     def test_unauthenticated_error_has_standard_schema(self):
         response = self.client.get('/api/auth/me/')
 
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertIn('detail', response.data)
-        self.assertIn('code', response.data)
-        self.assertIn('field_errors', response.data)
-        self.assertEqual(response.data['field_errors'], {})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert 'detail' in response.data
+        assert 'code' in response.data
+        assert 'field_errors' in response.data
+        assert response.data['field_errors'] == {}
 
     def test_validation_error_has_standard_schema_with_field_errors(self):
         self.client.force_authenticate(user=self.ceo)
@@ -45,11 +45,11 @@ class ApiErrorSchemaTests(APITestCase):
         }
         response = self.client.post('/api/employees/', payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('detail', response.data)
-        self.assertIn('code', response.data)
-        self.assertIn('field_errors', response.data)
-        self.assertIn('first_name', response.data['field_errors'])
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'detail' in response.data
+        assert 'code' in response.data
+        assert 'field_errors' in response.data
+        assert 'first_name' in response.data['field_errors']
 
     def test_unhandled_exception_returns_standard_500_schema(self):
         self.client.force_authenticate(user=self.ceo)
@@ -57,7 +57,7 @@ class ApiErrorSchemaTests(APITestCase):
         with patch('api.views.auth.UserMeView.get', side_effect=Exception('boom')):
             response = self.client.get('/api/auth/me/')
 
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertEqual(response.data['detail'], 'Internal server error.')
-        self.assertEqual(response.data['code'], 'server_error')
-        self.assertEqual(response.data['field_errors'], {})
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.data['detail'] == 'Internal server error.'
+        assert response.data['code'] == 'server_error'
+        assert response.data['field_errors'] == {}

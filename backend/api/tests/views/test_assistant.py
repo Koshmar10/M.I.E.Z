@@ -71,7 +71,7 @@ class AssistantChatEndpointTests(TestCase):
     def test_requires_authentication(self):
         """Test that endpoint requires authentication."""
         response = self.client.post(self.endpoint, {'message': 'Hello'}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_valid_chat_request(self):
         """Test successful chat request."""
@@ -87,11 +87,11 @@ class AssistantChatEndpointTests(TestCase):
 
         response = self.client.post(self.endpoint, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('response', response.data)
-        self.assertIn('tool_calls_made', response.data)
-        self.assertIsInstance(response.data['tool_calls_made'], list)
-        self.assertEqual(response.data['response'], 'mocked anthropic response')
+        assert response.status_code == status.HTTP_200_OK
+        assert 'response' in response.data
+        assert 'tool_calls_made' in response.data
+        assert isinstance(response.data['tool_calls_made'], list)
+        assert response.data['response'] == 'mocked anthropic response'
 
     def test_chat_without_history(self):
         """Test chat request without conversation history."""
@@ -103,7 +103,7 @@ class AssistantChatEndpointTests(TestCase):
 
         response = self.client.post(self.endpoint, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        assert response.status_code == status.HTTP_200_OK
 
     def test_empty_message_validation(self):
         """Test that empty message is rejected."""
@@ -113,8 +113,8 @@ class AssistantChatEndpointTests(TestCase):
 
         response = self.client.post(self.endpoint, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'message' in response.data
 
     def test_message_length_validation(self):
         """Test that excessively long message is rejected."""
@@ -127,8 +127,8 @@ class AssistantChatEndpointTests(TestCase):
 
         response = self.client.post(self.endpoint, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'message' in response.data
 
     def test_invalid_history_format(self):
         """Test that invalid history format is rejected."""
@@ -143,7 +143,7 @@ class AssistantChatEndpointTests(TestCase):
 
         response = self.client.post(self.endpoint, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_rate_limit_enforcement(self):
         """Test that rate limit is enforced (20 requests per minute)."""
@@ -154,13 +154,13 @@ class AssistantChatEndpointTests(TestCase):
         # Make 20 successful requests
         for i in range(20):
             response = self.client.post(self.endpoint, payload, format='json')
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            assert response.status_code == status.HTTP_200_OK
 
         # 21st request should be rate limited
         response = self.client.post(self.endpoint, payload, format='json')
-        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
-        self.assertIn('detail', response.data)
-        self.assertIn('rate_limit', response.data)
+        assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        assert 'detail' in response.data
+        assert 'rate_limit' in response.data
 
     def test_rate_limit_per_user(self):
         """Test that rate limit is per-user, not global."""
@@ -169,12 +169,12 @@ class AssistantChatEndpointTests(TestCase):
         # First user makes request
         self.client.force_authenticate(user=self.ceo_user)
         response1 = self.client.post(self.endpoint, payload, format='json')
-        self.assertEqual(response1.status_code, status.HTTP_200_OK)
+        assert response1.status_code == status.HTTP_200_OK
 
         # Different user should not be affected by first user's rate limit
         self.client.force_authenticate(user=self.hr_user)
         response2 = self.client.post(self.endpoint, payload, format='json')
-        self.assertEqual(response2.status_code, status.HTTP_200_OK)
+        assert response2.status_code == status.HTTP_200_OK
 
     def test_chat_with_all_roles(self):
         """Test that all user roles can access the endpoint."""
@@ -191,7 +191,7 @@ class AssistantChatEndpointTests(TestCase):
             self.client.force_authenticate(user=user)
 
             response = self.client.post(self.endpoint, payload, format='json')
-            self.assertEqual(response.status_code, status.HTTP_200_OK, f'Failed for {role_name} role')
+            assert response.status_code == status.HTTP_200_OK, f'Failed for {role_name} role'
 
     def test_response_structure(self):
         """Test that response has correct structure."""
@@ -201,14 +201,14 @@ class AssistantChatEndpointTests(TestCase):
 
         response = self.client.post(self.endpoint, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.data, dict)
-        self.assertIn('response', response.data)
-        self.assertIn('tool_calls_made', response.data)
+        assert response.status_code == status.HTTP_200_OK
+        assert isinstance(response.data, dict)
+        assert 'response' in response.data
+        assert 'tool_calls_made' in response.data
 
         # Check types
-        self.assertIsInstance(response.data['response'], str)
-        self.assertIsInstance(response.data['tool_calls_made'], list)
+        assert isinstance(response.data['response'], str)
+        assert isinstance(response.data['tool_calls_made'], list)
 
     def test_missing_message_field(self):
         """Test that missing message field is rejected."""
@@ -218,8 +218,8 @@ class AssistantChatEndpointTests(TestCase):
 
         response = self.client.post(self.endpoint, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('message', response.data)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'message' in response.data
 
     def test_whitespace_only_message(self):
         """Test that whitespace-only message is rejected."""
@@ -229,7 +229,7 @@ class AssistantChatEndpointTests(TestCase):
 
         response = self.client.post(self.endpoint, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_history_with_invalid_role(self):
         """Test that invalid role in history is rejected."""
@@ -244,4 +244,4 @@ class AssistantChatEndpointTests(TestCase):
 
         response = self.client.post(self.endpoint, payload, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST

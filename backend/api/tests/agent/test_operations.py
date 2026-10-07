@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 
+import pytest
 from django.test import TestCase
 from django.utils import timezone
 
@@ -69,19 +70,19 @@ class AssistantToolTests(TestCase):
 
         summary = get_dashboard_summary(module='sales', user=self.sales_user)
 
-        self.assertEqual(set(summary.keys()), {'module', 'kpis', 'generated_at'})
-        self.assertEqual(summary['module'], 'sales')
-        self.assertIsInstance(summary['kpis'], list)
-        self.assertTrue(all('label' in k and 'value' in k for k in summary['kpis']))
-        self.assertEqual(self._kpi(summary, 'Orders Today'), 1)
-        self.assertEqual(self._kpi(summary, 'Revenue Today (RON)'), '100.00')
+        assert set(summary.keys()) == {'module', 'kpis', 'generated_at'}
+        assert summary['module'] == 'sales'
+        assert isinstance(summary['kpis'], list)
+        assert all('label' in k and 'value' in k for k in summary['kpis'])
+        assert self._kpi(summary, 'Orders Today') == 1
+        assert self._kpi(summary, 'Revenue Today (RON)') == '100.00'
 
     def test_get_dashboard_summary_hr_returns_standard_envelope(self):
         summary = get_dashboard_summary(module='hr', user=self.hr_user)
 
-        self.assertEqual(set(summary.keys()), {'module', 'kpis', 'generated_at'})
-        self.assertEqual(summary['module'], 'hr')
-        self.assertIsInstance(summary['kpis'], list)
+        assert set(summary.keys()) == {'module', 'kpis', 'generated_at'}
+        assert summary['module'] == 'hr'
+        assert isinstance(summary['kpis'], list)
 
     def test_get_dashboard_summary_it_returns_standard_envelope(self):
         Ticket.objects.create(
@@ -90,9 +91,9 @@ class AssistantToolTests(TestCase):
 
         summary = get_dashboard_summary(module='it', user=self.it_user)
 
-        self.assertEqual(set(summary.keys()), {'module', 'kpis', 'generated_at'})
-        self.assertEqual(summary['module'], 'it')
-        self.assertEqual(self._kpi(summary, 'Open Tickets'), 1)
+        assert set(summary.keys()) == {'module', 'kpis', 'generated_at'}
+        assert summary['module'] == 'it'
+        assert self._kpi(summary, 'Open Tickets') == 1
 
     def test_get_dashboard_summary_inventory_returns_standard_envelope(self):
         inventory_user = User.objects.create_user(username='inv', email='inv@example.com', role=User.Role.INVENTORY)
@@ -100,21 +101,21 @@ class AssistantToolTests(TestCase):
 
         summary = get_dashboard_summary(module='inventory', user=inventory_user)
 
-        self.assertEqual(set(summary.keys()), {'module', 'kpis', 'generated_at'})
-        self.assertEqual(summary['module'], 'inventory')
-        self.assertEqual(self._kpi(summary, 'Out of Stock'), 1)
+        assert set(summary.keys()) == {'module', 'kpis', 'generated_at'}
+        assert summary['module'] == 'inventory'
+        assert self._kpi(summary, 'Out of Stock') == 1
 
     def test_get_dashboard_summary_ceo_can_access_any_module(self):
         for mod in ['sales', 'hr', 'it', 'inventory']:
             summary = get_dashboard_summary(module=mod, user=self.ceo)
-            self.assertEqual(summary['module'], mod)
+            assert summary['module'] == mod
 
     def test_get_dashboard_summary_hr_denied_for_sales_role(self):
-        with self.assertRaises(PermissionError):
+        with pytest.raises(PermissionError):
             get_dashboard_summary(module='hr', user=self.sales_user)
 
     def test_get_dashboard_summary_invalid_module_raises_value_error(self):
-        with self.assertRaises(ValueError):
+        with pytest.raises(ValueError):
             get_dashboard_summary(module='finance', user=self.ceo)
 
     def test_query_tickets_new_returns_only_open_tickets(self):
@@ -130,9 +131,9 @@ class AssistantToolTests(TestCase):
 
         results = query_tickets(status='NEW', user=self.it_user)
 
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]['id'], ticket_one.id)
-        self.assertTrue(all(item['status'] == 'NEW' for item in results))
+        assert len(results) == 1
+        assert results[0]['id'] == ticket_one.id
+        assert all(item['status'] == 'NEW' for item in results)
 
     def test_query_tickets_filters_priority_assigned_and_limit(self):
         assigned = User.objects.create_user(
@@ -165,8 +166,8 @@ class AssistantToolTests(TestCase):
             limit=50,
         )
 
-        self.assertEqual(len(results), 10)
-        self.assertTrue(all(item['status'] == 'NEW' for item in results))
+        assert len(results) == 10
+        assert all(item['status'] == 'NEW' for item in results)
 
     def test_query_orders_filters_and_caps_at_ten(self):
         customer_target = Customer.objects.create(name='Acme Retail')
@@ -204,13 +205,13 @@ class AssistantToolTests(TestCase):
             limit=20,
         )
 
-        self.assertEqual(len(results), 10)
-        self.assertTrue(all(item['status'] == Order.Status.PROCESSING for item in results))
-        self.assertTrue(all(item['channel'] == Order.Channel.WEBSITE for item in results))
-        self.assertTrue(all('Acme' in item['customer_name'] for item in results))
+        assert len(results) == 10
+        assert all(item['status'] == Order.Status.PROCESSING for item in results)
+        assert all(item['channel'] == Order.Channel.WEBSITE for item in results)
+        assert all('Acme' in item['customer_name'] for item in results)
 
     def test_query_employees_denied_for_sales_role(self):
-        with self.assertRaises(PermissionError):
+        with pytest.raises(PermissionError):
             query_employees(user=self.sales_user)
 
     def test_query_employees_filters_department_role_active_and_limit(self):
@@ -246,10 +247,10 @@ class AssistantToolTests(TestCase):
             limit=99,
         )
 
-        self.assertEqual(len(results), 10)
-        self.assertTrue(all(item['role'] == User.Role.SALES for item in results))
-        self.assertTrue(all(item['is_active'] for item in results))
-        self.assertTrue(all(item['department']['slug'] == self.department.slug for item in results))
+        assert len(results) == 10
+        assert all(item['role'] == User.Role.SALES for item in results)
+        assert all(item['is_active'] for item in results)
+        assert all(item['department']['slug'] == self.department.slug for item in results)
 
     def test_query_inventory_filters_status_category_below_min_and_limit(self):
         for index in range(12):
@@ -293,9 +294,9 @@ class AssistantToolTests(TestCase):
             limit=50,
         )
 
-        self.assertEqual(len(results), 10)
-        self.assertTrue(all(item['status'] == 'Low Stock' for item in results))
-        self.assertTrue(all(item['category'] == Product.Category.ELECTRONICS for item in results))
+        assert len(results) == 10
+        assert all(item['status'] == 'Low Stock' for item in results)
+        assert all(item['category'] == Product.Category.ELECTRONICS for item in results)
 
     def test_create_ticket_returns_ticket_number_and_status(self):
         result = create_ticket(
@@ -306,15 +307,15 @@ class AssistantToolTests(TestCase):
             location='HQ',
         )
 
-        self.assertIn('ticket_number', result)
-        self.assertEqual(result['status'], Ticket.Status.OPEN)
+        assert 'ticket_number' in result
+        assert result['status'] == Ticket.Status.OPEN
         ticket = Ticket.objects.get(ticket_number=result['ticket_number'])
-        self.assertEqual(ticket.requested_by, self.sales_user)
+        assert ticket.requested_by == self.sales_user
 
     def test_create_ticket_available_to_all_roles(self):
         for user in [self.ceo, self.hr_user, self.sales_user, self.it_user]:
             result = create_ticket(user=user, title=f'Ticket by {user.username}')
-            self.assertIn('ticket_number', result)
+            assert 'ticket_number' in result
 
     def test_create_leave_request_returns_id_and_pending_status(self):
         employee = User.objects.create_user(
@@ -332,9 +333,9 @@ class AssistantToolTests(TestCase):
             reason='Vacation',
         )
 
-        self.assertIn('id', result)
-        self.assertEqual(result['status'], LeaveRequest.Status.PENDING)
-        self.assertEqual(LeaveRequest.objects.get(id=result['id']).employee_id, employee.id)
+        assert 'id' in result
+        assert result['status'] == LeaveRequest.Status.PENDING
+        assert LeaveRequest.objects.get(id=result['id']).employee_id == employee.id
 
     def test_create_leave_request_defaults_employee_to_requesting_user(self):
         result = create_leave_request(
@@ -343,11 +344,11 @@ class AssistantToolTests(TestCase):
             to_date=timezone.localdate() + timedelta(days=3),
         )
 
-        self.assertEqual(result['status'], LeaveRequest.Status.PENDING)
-        self.assertEqual(LeaveRequest.objects.get(id=result['id']).employee, self.sales_user)
+        assert result['status'] == LeaveRequest.Status.PENDING
+        assert LeaveRequest.objects.get(id=result['id']).employee == self.sales_user
 
     def test_create_leave_request_denied_for_ceo(self):
-        with self.assertRaises(PermissionError):
+        with pytest.raises(PermissionError):
             create_leave_request(
                 user=self.ceo,
                 from_date=timezone.localdate() + timedelta(days=1),
@@ -362,7 +363,7 @@ class AssistantToolTests(TestCase):
             period='May 2026',
         )
 
-        with self.assertRaises(PermissionError):
+        with pytest.raises(PermissionError):
             generate_report(user=self.sales_user, slug=report.slug)
 
     def test_get_attendance_trend_flags_low_department_attendance_and_repeated_absence(self):
@@ -410,8 +411,8 @@ class AssistantToolTests(TestCase):
 
         result = get_attendance_trend(user=self.hr_user, weeks=4)
 
-        self.assertIsInstance(result, list)
-        self.assertTrue(result)
+        assert isinstance(result, list)
+        assert result
 
         hr_current_week = next(
             row
@@ -419,10 +420,10 @@ class AssistantToolTests(TestCase):
             if row['department'] == self.hr_department.name and row['week'] == current_week_start.isoformat()
         )
 
-        self.assertLess(hr_current_week['attendance_pct'], 85.0)
-        self.assertTrue(hr_current_week['flag_low_attendance'])
-        self.assertEqual(hr_current_week['approved_leave_count'], 1)
-        self.assertEqual(hr_current_week['unexcused_absence_count'], 4)
+        assert hr_current_week['attendance_pct'] < 85.0
+        assert hr_current_week['flag_low_attendance']
+        assert hr_current_week['approved_leave_count'] == 1
+        assert hr_current_week['unexcused_absence_count'] == 4
 
         unexcused_entry = next(
             item for item in hr_current_week['employees_absent'] if item['absence_type'] == 'unexcused'
@@ -431,15 +432,15 @@ class AssistantToolTests(TestCase):
             item for item in hr_current_week['employees_absent'] if item['absence_type'] == 'approved_leave'
         )
 
-        self.assertEqual(unexcused_entry['name'], 'Ana Popa')
-        self.assertEqual(unexcused_entry['count'], 4)
-        self.assertTrue(unexcused_entry['flag_repeated_absence'])
-        self.assertEqual(approved_entry['name'], 'Maria Ionescu')
-        self.assertEqual(approved_entry['count'], 1)
-        self.assertFalse(approved_entry['flag_repeated_absence'])
+        assert unexcused_entry['name'] == 'Ana Popa'
+        assert unexcused_entry['count'] == 4
+        assert unexcused_entry['flag_repeated_absence']
+        assert approved_entry['name'] == 'Maria Ionescu'
+        assert approved_entry['count'] == 1
+        assert not approved_entry['flag_repeated_absence']
 
     def test_get_attendance_trend_denied_for_sales_role(self):
-        with self.assertRaises(PermissionError):
+        with pytest.raises(PermissionError):
             get_attendance_trend(user=self.sales_user, weeks=4)
 
     def test_get_leave_patterns_detects_monday_friday_medical_and_rejection_follow_up(self):
@@ -520,26 +521,26 @@ class AssistantToolTests(TestCase):
 
         observations = get_leave_patterns(user=self.hr_user, weeks=8)
 
-        self.assertIsInstance(observations, list)
-        self.assertTrue(observations)
+        assert isinstance(observations, list)
+        assert observations
 
         monday_pattern = next(item for item in observations if item['pattern_type'] == 'monday_friday_leave_requests')
         medical_pattern = next(item for item in observations if item['pattern_type'] == 'medical_leave_cluster')
         rejection_pattern = next(item for item in observations if item['pattern_type'] == 'leave_after_rejection')
 
-        self.assertEqual(monday_pattern['employee_name'], 'Ana Popescu')
-        self.assertEqual(monday_pattern['occurrences'], 3)
-        self.assertIn('Observation:', monday_pattern['description'])
+        assert monday_pattern['employee_name'] == 'Ana Popescu'
+        assert monday_pattern['occurrences'] == 3
+        assert 'Observation:' in monday_pattern['description']
 
-        self.assertEqual(medical_pattern['department'], self.hr_department.name)
-        self.assertEqual(medical_pattern['occurrences'], 3)
-        self.assertIn('Observation:', medical_pattern['description'])
+        assert medical_pattern['department'] == self.hr_department.name
+        assert medical_pattern['occurrences'] == 3
+        assert 'Observation:' in medical_pattern['description']
 
-        self.assertEqual(rejection_pattern['employee_name'], 'Elena Marin')
-        self.assertIn('Observation:', rejection_pattern['description'])
+        assert rejection_pattern['employee_name'] == 'Elena Marin'
+        assert 'Observation:' in rejection_pattern['description']
 
     def test_get_leave_patterns_denied_for_sales_role(self):
-        with self.assertRaises(PermissionError):
+        with pytest.raises(PermissionError):
             get_leave_patterns(user=self.sales_user, weeks=8)
 
     def test_get_headcount_vs_workload_returns_ratios_and_threshold_statuses(self):
@@ -595,27 +596,27 @@ class AssistantToolTests(TestCase):
 
         results = get_headcount_vs_workload(user=self.hr_user)
 
-        self.assertEqual([item['department'] for item in results], ['Sales', 'IT', 'Inventory'])
+        assert [item['department'] for item in results] == ['Sales', 'IT', 'Inventory']
 
         sales_row = next(item for item in results if item['department'] == 'Sales')
         it_row = next(item for item in results if item['department'] == 'IT')
         inventory_row = next(item for item in results if item['department'] == 'Inventory')
 
-        self.assertEqual(sales_row['active_headcount'], 2)
-        self.assertEqual(sales_row['workload_items'], 11)
-        self.assertEqual(sales_row['ratio'], 5.5)
-        self.assertEqual(sales_row['status'], 'warning')
+        assert sales_row['active_headcount'] == 2
+        assert sales_row['workload_items'] == 11
+        assert sales_row['ratio'] == 5.5
+        assert sales_row['status'] == 'warning'
 
-        self.assertEqual(it_row['active_headcount'], 1)
-        self.assertEqual(it_row['workload_items'], 12)
-        self.assertEqual(it_row['ratio'], 12.0)
-        self.assertEqual(it_row['status'], 'critical')
+        assert it_row['active_headcount'] == 1
+        assert it_row['workload_items'] == 12
+        assert it_row['ratio'] == 12.0
+        assert it_row['status'] == 'critical'
 
-        self.assertEqual(inventory_row['active_headcount'], 4)
-        self.assertEqual(inventory_row['workload_items'], 8)
-        self.assertEqual(inventory_row['ratio'], 2.0)
-        self.assertEqual(inventory_row['status'], 'ok')
+        assert inventory_row['active_headcount'] == 4
+        assert inventory_row['workload_items'] == 8
+        assert inventory_row['ratio'] == 2.0
+        assert inventory_row['status'] == 'ok'
 
     def test_get_headcount_vs_workload_denied_for_sales_role(self):
-        with self.assertRaises(PermissionError):
+        with pytest.raises(PermissionError):
             get_headcount_vs_workload(user=self.sales_user)

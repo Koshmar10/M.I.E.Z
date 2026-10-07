@@ -114,13 +114,13 @@ class HrAgentIntegrationTest(TestCase):
 
         # Assert a WorkflowLog created with success=True
         log = WorkflowLog.objects.order_by('-triggered_at').first()
-        self.assertIsNotNone(log)
-        self.assertTrue(log.success)
+        assert log is not None
+        assert log.success
 
         # Assert Report created with category HR and non-null digest content
         report = Report.objects.filter(category=Report.Category.HR).order_by('-generated_at').first()
-        self.assertIsNotNone(report)
-        self.assertIsNotNone(report.digest_data)
+        assert report is not None
+        assert report.digest_data is not None
         # run_hr_agent stores the structured digest as a JSON string in digest_data['content']
         if 'summary_line' not in report.digest_data:
             content = report.digest_data.get('content')
@@ -128,28 +128,28 @@ class HrAgentIntegrationTest(TestCase):
                 parsed = json.loads(content) if isinstance(content, str) else content
             except Exception:
                 parsed = None
-            self.assertIsNotNone(parsed)
-            self.assertIn('summary_line', parsed)
+            assert parsed is not None
+            assert 'summary_line' in parsed
 
         # Assert Notification created for HR Manager users
         notifications = Notification.objects.filter(recipient=self.hr_manager)
-        self.assertTrue(notifications.exists())
+        assert notifications.exists()
 
         # Assert GET /api/hr/latest-digest/ returns the created Report
         self.client.force_authenticate(user=self.hr_manager)
         resp = self.client.get('/api/hr/latest-digest/')
-        self.assertEqual(resp.status_code, 200)
+        assert resp.status_code == 200
         data = resp.json()
-        self.assertEqual(data['id'], report.id)
-        self.assertEqual(data['category'], Report.Category.HR)
+        assert data['id'] == report.id
+        assert data['category'] == Report.Category.HR
 
         # Assert HR dashboard includes digest summary
         resp2 = self.client.get('/api/hr/dashboard/')
-        self.assertEqual(resp2.status_code, 200)
-        self.assertIn('latest_digest', resp2.json())
+        assert resp2.status_code == 200
+        assert 'latest_digest' in resp2.json()
         ld = resp2.json()['latest_digest']
-        self.assertIsNotNone(ld)
-        self.assertIn('summary', ld)
+        assert ld is not None
+        assert 'summary' in ld
 
     @patch('api.management.commands.run_hr_agent.AgentRunner.run')
     def test_management_command_run_hr_agent_dry_run_no_notification(self, mocked_run):
@@ -160,10 +160,10 @@ class HrAgentIntegrationTest(TestCase):
         call_command('run_hr_agent', dry_run=True)
 
         notifications = Notification.objects.filter(recipient=self.hr_manager)
-        self.assertFalse(notifications.exists())
+        assert not notifications.exists()
 
         log = WorkflowLog.objects.order_by('-triggered_at').first()
-        self.assertTrue(log.success)
+        assert log.success
 
     @patch('api.management.commands.run_hr_agent.AgentRunner.run')
     def test_run_hr_agent_zero_insights_no_notification_sent(self, mocked_run):
@@ -174,7 +174,7 @@ class HrAgentIntegrationTest(TestCase):
         call_command('run_hr_agent')
 
         notifications = Notification.objects.filter(recipient=self.hr_manager)
-        self.assertFalse(notifications.exists())
+        assert not notifications.exists()
 
     @patch('api.management.commands.run_hr_agent.AgentRunner.run')
     def test_run_hr_agent_critical_insight_creates_notification_type_warning(self, mocked_run):
@@ -185,14 +185,14 @@ class HrAgentIntegrationTest(TestCase):
         call_command('run_hr_agent')
 
         notifications = Notification.objects.filter(recipient=self.hr_manager)
-        self.assertTrue(notifications.exists())
-        self.assertEqual(notifications.first().type, 'WARNING')
+        assert notifications.exists()
+        assert notifications.first().type == 'WARNING'
 
     def test_post_run_insights_agent_non_hr_role_forbidden(self):
         non_hr = self.employees[0]  # SALES
         self.client.force_authenticate(user=non_hr)
         resp = self.client.post('/api/hr/run-insights-agent/')
-        self.assertEqual(resp.status_code, 403)
+        assert resp.status_code == 403
 
     @patch('api.views.hr.RunInsightsAgentView._spawn_agent')
     def test_post_run_insights_agent_rate_limit_enforced(self, mock_spawn):
@@ -205,8 +205,8 @@ class HrAgentIntegrationTest(TestCase):
 
         for _ in range(3):
             resp = self.client.post('/api/hr/run-insights-agent/')
-            self.assertEqual(resp.status_code, 200)
+            assert resp.status_code == 200
 
         resp_rate_limit = self.client.post('/api/hr/run-insights-agent/')
-        self.assertEqual(resp_rate_limit.status_code, 429)
-        self.assertEqual(mock_spawn.call_count, 3)
+        assert resp_rate_limit.status_code == 429
+        assert mock_spawn.call_count == 3

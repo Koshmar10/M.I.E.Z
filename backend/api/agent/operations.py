@@ -244,7 +244,9 @@ def get_dashboard_summary(module: str, user: User) -> dict[str, Any]:
         }
 
     if module_name == 'sales':
-        _require_roles(user, [User.Role.CEO, User.Role.SALES], 'Only CEO and Sales can access the sales dashboard summary.')
+        _require_roles(
+            user, [User.Role.CEO, User.Role.SALES], 'Only CEO and Sales can access the sales dashboard summary.'
+        )
 
         today = timezone.localdate()
         yesterday = today - timedelta(days=1)
@@ -271,14 +273,21 @@ def get_dashboard_summary(module: str, user: User) -> dict[str, Any]:
         orders_yesterday = yesterday_stats['orders_yesterday'] or 0
         revenue_yesterday = yesterday_stats['revenue_yesterday_ron'] or 0
 
-        return _result([
-            {'label': 'Orders Today', 'value': orders_today},
-            {'label': 'Revenue Today (RON)', 'value': f'{revenue_today:.2f}'},
-            {'label': 'Processing Orders', 'value': base_qs.filter(status=Order.Status.PROCESSING).count()},
-            {'label': 'Cancelled This Week', 'value': base_qs.filter(status=Order.Status.CANCELLED, date__gte=start_of_week, date__lte=today).count()},
-            {'label': 'Orders Change vs Yesterday (%)', 'value': _pct(orders_today, orders_yesterday)},
-            {'label': 'Revenue Change vs Yesterday (%)', 'value': _pct(revenue_today, revenue_yesterday)},
-        ])
+        return _result(
+            [
+                {'label': 'Orders Today', 'value': orders_today},
+                {'label': 'Revenue Today (RON)', 'value': f'{revenue_today:.2f}'},
+                {'label': 'Processing Orders', 'value': base_qs.filter(status=Order.Status.PROCESSING).count()},
+                {
+                    'label': 'Cancelled This Week',
+                    'value': base_qs.filter(
+                        status=Order.Status.CANCELLED, date__gte=start_of_week, date__lte=today
+                    ).count(),
+                },
+                {'label': 'Orders Change vs Yesterday (%)', 'value': _pct(orders_today, orders_yesterday)},
+                {'label': 'Revenue Change vs Yesterday (%)', 'value': _pct(revenue_today, revenue_yesterday)},
+            ]
+        )
 
     if module_name == 'hr':
         _require_roles(user, [User.Role.CEO, User.Role.HR], 'Only CEO and HR can access the HR dashboard summary.')
@@ -290,14 +299,22 @@ def get_dashboard_summary(module: str, user: User) -> dict[str, Any]:
         active = employees.filter(is_active=True).count()
         full_time = employees.filter(full_time=True).count()
 
-        return _result([
-            {'label': 'Total Employees', 'value': total},
-            {'label': 'Active Employees', 'value': active},
-            {'label': 'New Hires This Month', 'value': employees.filter(start_date__gte=month_start, start_date__lte=today).count()},
-            {'label': 'Pending Leave Requests', 'value': LeaveRequest.objects.filter(status=LeaveRequest.Status.PENDING).count()},
-            {'label': 'Full-Time Employees', 'value': full_time},
-            {'label': 'Retention Rate (%)', 'value': round((active / total) * 100, 1) if total else 0.0},
-        ])
+        return _result(
+            [
+                {'label': 'Total Employees', 'value': total},
+                {'label': 'Active Employees', 'value': active},
+                {
+                    'label': 'New Hires This Month',
+                    'value': employees.filter(start_date__gte=month_start, start_date__lte=today).count(),
+                },
+                {
+                    'label': 'Pending Leave Requests',
+                    'value': LeaveRequest.objects.filter(status=LeaveRequest.Status.PENDING).count(),
+                },
+                {'label': 'Full-Time Employees', 'value': full_time},
+                {'label': 'Retention Rate (%)', 'value': round((active / total) * 100, 1) if total else 0.0},
+            ]
+        )
 
     if module_name == 'it':
         _require_roles(user, [User.Role.CEO, User.Role.IT], 'Only CEO and IT can access the IT dashboard summary.')
@@ -309,39 +326,60 @@ def get_dashboard_summary(module: str, user: User) -> dict[str, Any]:
             open_tickets=Count('id', filter=Q(status=Ticket.Status.OPEN)),
             in_progress=Count('id', filter=Q(status=Ticket.Status.IN_PROGRESS)),
             resolved_this_week=Count('id', filter=Q(status=Ticket.Status.RESOLVED, resolved_at__gte=week_start)),
-            critical_open=Count('id', filter=Q(status=Ticket.Status.OPEN, priority__in=[Ticket.Priority.HIGH, Ticket.Priority.URGENT])),
+            critical_open=Count(
+                'id', filter=Q(status=Ticket.Status.OPEN, priority__in=[Ticket.Priority.HIGH, Ticket.Priority.URGENT])
+            ),
         )
 
         resolved_qs = Ticket.objects.filter(status=Ticket.Status.RESOLVED, resolved_at__gte=week_start).annotate(
             duration=ExpressionWrapper(F('resolved_at') - F('created_at'), output_field=DurationField())
         )
-        perf = resolved_qs.aggregate(avg_res_time=Avg('duration'), sla_met=Count('id', filter=Q(duration__lte=timedelta(hours=4))))
+        perf = resolved_qs.aggregate(
+            avg_res_time=Avg('duration'), sla_met=Count('id', filter=Q(duration__lte=timedelta(hours=4)))
+        )
 
         avg_hrs = round(perf['avg_res_time'].total_seconds() / 3600, 2) if perf['avg_res_time'] else 0.0
         total_resolved = stats['resolved_this_week'] or 0
         sla_pct = round((perf['sla_met'] / total_resolved) * 100, 2) if total_resolved else 0.0
 
-        return _result([
-            {'label': 'Open Tickets', 'value': stats['open_tickets']},
-            {'label': 'In Progress', 'value': stats['in_progress']},
-            {'label': 'Resolved This Week', 'value': total_resolved},
-            {'label': 'Critical Open', 'value': stats['critical_open']},
-            {'label': 'Avg Resolution Time (hrs)', 'value': avg_hrs},
-            {'label': 'SLA Met (%)', 'value': sla_pct},
-        ])
+        return _result(
+            [
+                {'label': 'Open Tickets', 'value': stats['open_tickets']},
+                {'label': 'In Progress', 'value': stats['in_progress']},
+                {'label': 'Resolved This Week', 'value': total_resolved},
+                {'label': 'Critical Open', 'value': stats['critical_open']},
+                {'label': 'Avg Resolution Time (hrs)', 'value': avg_hrs},
+                {'label': 'SLA Met (%)', 'value': sla_pct},
+            ]
+        )
 
     if module_name == 'inventory':
-        _require_roles(user, [User.Role.CEO, User.Role.INVENTORY], 'Only CEO and Inventory can access the inventory dashboard summary.')
+        _require_roles(
+            user,
+            [User.Role.CEO, User.Role.INVENTORY],
+            'Only CEO and Inventory can access the inventory dashboard summary.',
+        )
 
         import datetime as _dt
+
         today = _dt.date.today()
 
-        return _result([
-            {'label': 'Total Products', 'value': Product.objects.count()},
-            {'label': 'Low Stock', 'value': Product.objects.filter(stock_count__lt=F('min_stock'), stock_count__gt=0).count()},
-            {'label': 'Out of Stock', 'value': Product.objects.filter(stock_count=0).count()},
-            {'label': 'Deliveries Today', 'value': StockMovement.objects.filter(movement_type=StockMovement.Type.INBOUND, expected_date=today).count()},
-        ])
+        return _result(
+            [
+                {'label': 'Total Products', 'value': Product.objects.count()},
+                {
+                    'label': 'Low Stock',
+                    'value': Product.objects.filter(stock_count__lt=F('min_stock'), stock_count__gt=0).count(),
+                },
+                {'label': 'Out of Stock', 'value': Product.objects.filter(stock_count=0).count()},
+                {
+                    'label': 'Deliveries Today',
+                    'value': StockMovement.objects.filter(
+                        movement_type=StockMovement.Type.INBOUND, expected_date=today
+                    ).count(),
+                },
+            ]
+        )
 
     raise ValueError(f'Unsupported module: {module}. Must be one of: sales, hr, it, inventory.')
 
@@ -386,7 +424,7 @@ def query_tickets(
         else:
             raise ValueError('assigned_to must be a user id or username')
 
-    tickets = queryset.order_by('-created_at')[:_normalized_limit(limit)]
+    tickets = queryset.order_by('-created_at')[: _normalized_limit(limit)]
     return [_serialize_ticket(ticket) for ticket in tickets]
 
 
@@ -420,7 +458,7 @@ def query_employees(
     if is_active is not None:
         employees = employees.filter(is_active=bool(is_active))
 
-    employees = employees.order_by('id')[:_normalized_limit(limit)]
+    employees = employees.order_by('id')[: _normalized_limit(limit)]
     return [_serialize_employee(employee) for employee in employees]
 
 
@@ -453,7 +491,7 @@ def query_orders(
     if customer:
         queryset = queryset.filter(customer__name__icontains=customer)
 
-    orders = queryset.order_by('-date', '-id')[:_normalized_limit(limit)]
+    orders = queryset.order_by('-date', '-id')[: _normalized_limit(limit)]
     return [_serialize_order(order) for order in orders]
 
 
@@ -491,9 +529,9 @@ def query_inventory(
         }
         normalized_status = status_map.get(status_name, status_name)
         products = [product for product in products if product.availability.lower() == normalized_status]
-        return [_serialize_inventory(product) for product in products[:_normalized_limit(limit)]]
+        return [_serialize_inventory(product) for product in products[: _normalized_limit(limit)]]
 
-    return [_serialize_inventory(product) for product in products[:_normalized_limit(limit)]]
+    return [_serialize_inventory(product) for product in products[: _normalized_limit(limit)]]
 
 
 @agent_tool(
@@ -593,7 +631,10 @@ def generate_report(user: User, slug: str, context_data: str | None = None) -> d
     return {'report_name': report.name, 'slug': report.slug, 'status': 'generated'}
 
 
-@agent_tool(name='query_leave_requests', description='Query leave requests, optionally filtered by ISO week (e.g. 2026-W18), status, or department.')
+@agent_tool(
+    name='query_leave_requests',
+    description='Query leave requests, optionally filtered by ISO week (e.g. 2026-W18), status, or department.',
+)
 def query_leave_requests(
     user: User,
     week: str | None = None,
@@ -622,7 +663,7 @@ def query_leave_requests(
         elif isinstance(department, str):
             queryset = queryset.filter(Q(department__slug=department) | Q(department__name__iexact=department))
 
-    leave_requests = queryset.order_by('-created_at')[:_normalized_limit(limit)]
+    leave_requests = queryset.order_by('-created_at')[: _normalized_limit(limit)]
     return [
         {
             'id': lr.id,
@@ -639,7 +680,10 @@ def query_leave_requests(
     ]
 
 
-@agent_tool(name='query_attendance', description='Get attendance summary by department for an ISO week (e.g. 2026-W18). Defaults to the current week.')
+@agent_tool(
+    name='query_attendance',
+    description='Get attendance summary by department for an ISO week (e.g. 2026-W18). Defaults to the current week.',
+)
 def query_attendance(
     user: User,
     week: str | None = None,
@@ -665,8 +709,7 @@ def query_attendance(
             )
 
     rows = (
-        queryset
-        .values('employee__department__name')
+        queryset.values('employee__department__name')
         .annotate(
             total=Count('id'),
             present=Count('id', filter=Q(status__in=[Attendance.Status.PRESENT, Attendance.Status.REMOTE])),
@@ -712,8 +755,7 @@ def get_attendance_trend(
     base_queryset = Attendance.objects.filter(date__gte=first_week_start, date__lte=last_week_end)
 
     weekly_department_rows = (
-        base_queryset
-        .annotate(week=TruncWeek('date'))
+        base_queryset.annotate(week=TruncWeek('date'))
         .values('week', 'employee__department__name')
         .annotate(
             total=Count('id'),
@@ -740,8 +782,7 @@ def get_attendance_trend(
     }
 
     absent_employee_rows = (
-        base_queryset
-        .filter(status__in=[Attendance.Status.ABSENT, Attendance.Status.LEAVE])
+        base_queryset.filter(status__in=[Attendance.Status.ABSENT, Attendance.Status.LEAVE])
         .annotate(week=TruncWeek('date'))
         .values(
             'week',
@@ -762,7 +803,7 @@ def get_attendance_trend(
         week_date = week_value.date() if hasattr(week_value, 'date') else week_value
         department_name = row['employee__department__name'] or 'Unassigned'
 
-        full_name = f"{row['employee__first_name']} {row['employee__last_name']}".strip() or row['employee__username']
+        full_name = f'{row["employee__first_name"]} {row["employee__last_name"]}'.strip() or row['employee__username']
         is_unexcused = row['status'] == Attendance.Status.ABSENT
         employee_id = row['employee_id']
 
@@ -832,7 +873,9 @@ def get_leave_patterns(
         if request_date.weekday() not in (0, 4):
             continue
 
-        employee_name = f'{request.employee.first_name} {request.employee.last_name}'.strip() or request.employee.username
+        employee_name = (
+            f'{request.employee.first_name} {request.employee.last_name}'.strip() or request.employee.username
+        )
         bucket = monday_friday_counts[request.employee_id]
         bucket['employee_name'] = employee_name
         bucket['occurrences'] += 1
@@ -844,8 +887,8 @@ def get_leave_patterns(
                     'pattern_type': 'monday_friday_leave_requests',
                     'employee_name': bucket['employee_name'],
                     'description': (
-                        f"Observation: {bucket['employee_name']} submitted leave requests starting on Monday or Friday "
-                        f"{bucket['occurrences']} times in the last {total_weeks} weeks."
+                        f'Observation: {bucket["employee_name"]} submitted leave requests starting on Monday or Friday '
+                        f'{bucket["occurrences"]} times in the last {total_weeks} weeks.'
                     ),
                     'occurrences': bucket['occurrences'],
                 }
@@ -886,8 +929,8 @@ def get_leave_patterns(
                     'pattern_type': 'medical_leave_cluster',
                     'department': department_name,
                     'description': (
-                        f"Observation: {department_name} logged {occurrences} medical leave requests between "
-                        f"{window_start_date.isoformat()} and {window_end_date.isoformat()}."
+                        f'Observation: {department_name} logged {occurrences} medical leave requests between '
+                        f'{window_start_date.isoformat()} and {window_end_date.isoformat()}.'
                     ),
                     'occurrences': occurrences,
                 }
@@ -906,15 +949,17 @@ def get_leave_patterns(
                         'pattern_type': 'leave_after_rejection',
                         'employee_name': employee_name,
                         'description': (
-                            f"Observation: {employee_name} submitted a new leave request after a rejected request on "
-                            f"{request['created_at'].date().isoformat()}."
+                            f'Observation: {employee_name} submitted a new leave request after a rejected request on '
+                            f'{request["created_at"].date().isoformat()}.'
                         ),
                         'occurrences': consecutive_after_rejection,
                     }
                 )
             previous_rejected = request['status'] == LeaveRequest.Status.REJECTED
 
-    observations.sort(key=lambda item: (item['pattern_type'], item.get('employee_name') or item.get('department') or ''))
+    observations.sort(
+        key=lambda item: (item['pattern_type'], item.get('employee_name') or item.get('department') or '')
+    )
     return observations
 
 
@@ -983,22 +1028,20 @@ def get_headcount_vs_workload(user: User) -> list[dict[str, Any]]:
 
 def _group_leave_requests_by_employee(queryset) -> dict[int, list[dict[str, Any]]]:
     grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    rows = (
-        queryset
-        .values(
-            'employee_id',
-            'employee__first_name',
-            'employee__last_name',
-            'employee__username',
-            'status',
-            'created_at',
-            'id',
-        )
-        .order_by('employee_id', 'created_at', 'id')
-    )
+    rows = queryset.values(
+        'employee_id',
+        'employee__first_name',
+        'employee__last_name',
+        'employee__username',
+        'status',
+        'created_at',
+        'id',
+    ).order_by('employee_id', 'created_at', 'id')
 
     for row in rows:
-        employee_name = f"{row['employee__first_name']} {row['employee__last_name']}".strip() or row['employee__username']
+        employee_name = (
+            f'{row["employee__first_name"]} {row["employee__last_name"]}'.strip() or row['employee__username']
+        )
         grouped[row['employee_id']].append(
             {
                 'employee_name': employee_name,
@@ -1010,7 +1053,9 @@ def _group_leave_requests_by_employee(queryset) -> dict[int, list[dict[str, Any]
     return grouped
 
 
-@agent_tool(name='query_contracts', description='Query employee contracts expiring within a number of days (default 30).')
+@agent_tool(
+    name='query_contracts', description='Query employee contracts expiring within a number of days (default 30).'
+)
 def query_contracts(
     user: User,
     expiring_within_days: int | None = None,
@@ -1023,7 +1068,7 @@ def query_contracts(
     days = int(expiring_within_days) if expiring_within_days is not None else 30
     queryset = queryset.filter(end_date__gte=today, end_date__lte=today + timedelta(days=days))
 
-    contracts = queryset.order_by('end_date')[:_normalized_limit(limit)]
+    contracts = queryset.order_by('end_date')[: _normalized_limit(limit)]
     return [
         {
             'id': c.id,
@@ -1058,8 +1103,7 @@ def get_expiring_contracts(
     today = timezone.localdate()
     max_days = max(1, min(int(days), 365))
     queryset = (
-        Contract.objects
-        .select_related('employee', 'department')
+        Contract.objects.select_related('employee', 'department')
         .exclude(end_date__isnull=True)
         .filter(end_date__gte=today, end_date__lte=today + timedelta(days=max_days))
         .order_by('end_date', 'employee__id')
@@ -1069,15 +1113,10 @@ def get_expiring_contracts(
     for contract in queryset:
         employee = contract.employee
         full_name = f'{employee.first_name} {employee.last_name}'.strip() or employee.username
-        
-        has_open_tickets = Ticket.objects.filter(
-            assigned_to=employee
-        ).exclude(status=Ticket.Status.RESOLVED).exists()
-        
-        has_pending_leave = LeaveRequest.objects.filter(
-            employee=employee,
-            status=LeaveRequest.Status.PENDING
-        ).exists()
+
+        has_open_tickets = Ticket.objects.filter(assigned_to=employee).exclude(status=Ticket.Status.RESOLVED).exists()
+
+        has_pending_leave = LeaveRequest.objects.filter(employee=employee, status=LeaveRequest.Status.PENDING).exists()
 
         result.append(
             {
@@ -1096,7 +1135,9 @@ def get_expiring_contracts(
     return result
 
 
-@agent_tool(name='query_payroll', description='Get payroll summary for a month (format: YYYY-MM, defaults to current month).')
+@agent_tool(
+    name='query_payroll', description='Get payroll summary for a month (format: YYYY-MM, defaults to current month).'
+)
 def query_payroll(
     user: User,
     month: str | None = None,
@@ -1136,7 +1177,11 @@ def query_payroll(
         'type': 'object',
         'properties': {
             'month': {'type': 'string', 'description': 'Payroll month in YYYY-MM format; defaults to current month.'},
-            'months': {'type': 'integer', 'description': 'Number of historical months to compare against. Defaults to 3.', 'default': 3},
+            'months': {
+                'type': 'integer',
+                'description': 'Number of historical months to compare against. Defaults to 3.',
+                'default': 3,
+            },
         },
     },
 )
@@ -1156,8 +1201,12 @@ def get_payroll_anomalies(
     next_month = _shift_month(month_date, 1)
     history_start = _shift_month(month_date, -months)
 
-    current_entries = PayrollEntry.objects.select_related('employee').filter(month__gte=month_date, month__lt=next_month)
-    historical_entries = PayrollEntry.objects.select_related('employee').filter(month__gte=history_start, month__lt=month_date)
+    current_entries = PayrollEntry.objects.select_related('employee').filter(
+        month__gte=month_date, month__lt=next_month
+    )
+    historical_entries = PayrollEntry.objects.select_related('employee').filter(
+        month__gte=history_start, month__lt=month_date
+    )
 
     historical_diff_by_employee: dict[int, list[Decimal]] = defaultdict(list)
     historical_months_by_employee: dict[int, set[str]] = defaultdict(set)
@@ -1179,54 +1228,62 @@ def get_payroll_anomalies(
         current_diff = Decimal(str(entry.gross_salary_ron or 0)) - Decimal(str(entry.net_salary_ron or 0))
         previous_diffs = historical_diff_by_employee.get(employee.id, [])
         prev_months = historical_months_by_employee.get(employee.id, set())
-        
+
         # New hire check / missing from previous month
         if prev_month_str not in prev_months:
-            anomalies.append({
-                'employee_name': employee_name,
-                'anomaly_type': 'new_hire_or_missing_previous',
-                'current_value': 'Present',
-                'expected_range': 'Present in previous month',
-                'severity': 'INFO'
-            })
-            
+            anomalies.append(
+                {
+                    'employee_name': employee_name,
+                    'anomaly_type': 'new_hire_or_missing_previous',
+                    'current_value': 'Present',
+                    'expected_range': 'Present in previous month',
+                    'severity': 'INFO',
+                }
+            )
+
         if not previous_diffs:
             continue
 
         avg_diff = sum(previous_diffs, Decimal('0.00')) / Decimal(len(previous_diffs))
-        
+
         # Bonus spike
         if avg_diff > 0 and current_diff > (avg_diff * Decimal('2.00')):
-            anomalies.append({
-                'employee_name': employee_name,
-                'anomaly_type': 'bonus_spike',
-                'current_value': f'{current_diff:.2f} RON',
-                'expected_range': f'<= {(avg_diff * Decimal("2.00")):.2f} RON',
-                'severity': 'WARNING'
-            })
+            anomalies.append(
+                {
+                    'employee_name': employee_name,
+                    'anomaly_type': 'bonus_spike',
+                    'current_value': f'{current_diff:.2f} RON',
+                    'expected_range': f'<= {(avg_diff * Decimal("2.00")):.2f} RON',
+                    'severity': 'WARNING',
+                }
+            )
 
         # Deductions = 0 when non-zero previously
         if current_diff == 0 and all(d > 0 for d in previous_diffs):
-            anomalies.append({
-                'employee_name': employee_name,
-                'anomaly_type': 'zero_deductions',
-                'current_value': '0.00 RON',
-                'expected_range': '> 0.00 RON',
-                'severity': 'CRITICAL'
-            })
+            anomalies.append(
+                {
+                    'employee_name': employee_name,
+                    'anomaly_type': 'zero_deductions',
+                    'current_value': '0.00 RON',
+                    'expected_range': '> 0.00 RON',
+                    'severity': 'CRITICAL',
+                }
+            )
 
     active_employee_ids = set(User.objects.filter(is_active=True).values_list('id', flat=True))
     missing_employee_ids = sorted(active_employee_ids - current_employee_ids)
     for employee_id in missing_employee_ids:
         employee = User.objects.get(id=employee_id)
         employee_name = f'{employee.first_name} {employee.last_name}'.strip() or employee.username
-        anomalies.append({
-            'employee_name': employee_name,
-            'anomaly_type': 'missing_payroll_entry',
-            'current_value': 'Missing',
-            'expected_range': 'Present',
-            'severity': 'CRITICAL'
-        })
+        anomalies.append(
+            {
+                'employee_name': employee_name,
+                'anomaly_type': 'missing_payroll_entry',
+                'current_value': 'Missing',
+                'expected_range': 'Present',
+                'severity': 'CRITICAL',
+            }
+        )
 
     return anomalies
 
@@ -1258,11 +1315,14 @@ def query_customers(
     if name:
         queryset = queryset.filter(name__icontains=name)
 
-    customers = queryset.order_by('name')[:_normalized_limit(limit)]
+    customers = queryset.order_by('name')[: _normalized_limit(limit)]
     return [_serialize_customer(customer) for customer in customers]
 
 
-@agent_tool(name='query_invoices', description='Query invoices by status or customer. Set overdue=true to list issued invoices past their due date.')
+@agent_tool(
+    name='query_invoices',
+    description='Query invoices by status or customer. Set overdue=true to list issued invoices past their due date.',
+)
 def query_invoices(
     user: User,
     status: str | None = None,
@@ -1291,7 +1351,7 @@ def query_invoices(
             due_date__lt=timezone.localdate(),
         )
 
-    invoices = queryset.order_by('-issued_date', '-id')[:_normalized_limit(limit)]
+    invoices = queryset.order_by('-issued_date', '-id')[: _normalized_limit(limit)]
     return [_serialize_invoice(invoice) for invoice in invoices]
 
 
@@ -1358,11 +1418,14 @@ def query_suppliers(
     if name:
         queryset = queryset.filter(name__icontains=name)
 
-    suppliers = queryset.order_by('name')[:_normalized_limit(limit)]
+    suppliers = queryset.order_by('name')[: _normalized_limit(limit)]
     return [_serialize_supplier(supplier) for supplier in suppliers]
 
 
-@agent_tool(name='query_stock_movements', description='Query recent stock movements, optionally filtered by movement type or product SKU.')
+@agent_tool(
+    name='query_stock_movements',
+    description='Query recent stock movements, optionally filtered by movement type or product SKU.',
+)
 def query_stock_movements(
     user: User,
     movement_type: str | None = None,
@@ -1383,7 +1446,7 @@ def query_stock_movements(
     if sku:
         queryset = queryset.filter(product__sku__iexact=sku.strip())
 
-    movements = queryset.order_by('-created_at')[:_normalized_limit(limit)]
+    movements = queryset.order_by('-created_at')[: _normalized_limit(limit)]
     return [_serialize_stock_movement(movement) for movement in movements]
 
 
@@ -1484,7 +1547,7 @@ def query_assets(
         else:
             raise ValueError('assigned_to must be a user id or username')
 
-    assets = queryset.order_by('-created_at')[:_normalized_limit(limit)]
+    assets = queryset.order_by('-created_at')[: _normalized_limit(limit)]
     return [_serialize_asset(asset) for asset in assets]
 
 
@@ -1492,7 +1555,7 @@ def query_assets(
 def query_system_status(user: User, limit: int = 10) -> list[dict[str, Any]]:
     _require_roles(user, [User.Role.CEO, User.Role.IT], 'Only CEO and IT can view system status.')
 
-    rows = SystemStatus.objects.order_by('name')[:_normalized_limit(limit)]
+    rows = SystemStatus.objects.order_by('name')[: _normalized_limit(limit)]
     return [_serialize_system_status(row) for row in rows]
 
 
@@ -1612,7 +1675,10 @@ def decide_leave_request(user: User, leave_request_id: int, decision: str) -> di
 # ---------------------------------------------------------------------------
 
 
-@agent_tool(name='query_notifications', description='List notifications for the current user. Set unread_only=true to return only unread ones.')
+@agent_tool(
+    name='query_notifications',
+    description='List notifications for the current user. Set unread_only=true to return only unread ones.',
+)
 def query_notifications(
     user: User,
     unread_only: bool | None = None,
@@ -1622,13 +1688,13 @@ def query_notifications(
     if unread_only is True:
         queryset = queryset.filter(is_read=False)
 
-    notifications = queryset.order_by('-created_at')[:_normalized_limit(limit)]
+    notifications = queryset.order_by('-created_at')[: _normalized_limit(limit)]
     return [_serialize_notification(notification) for notification in notifications]
 
 
 @agent_tool(
     name='mark_notification_read',
-    description='Mark one of the current user\'s notifications as read, identified by its id.',
+    description="Mark one of the current user's notifications as read, identified by its id.",
     schema={
         'type': 'object',
         'properties': {

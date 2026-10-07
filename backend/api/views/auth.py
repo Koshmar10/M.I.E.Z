@@ -1,92 +1,70 @@
-"""Authentication and the current user's account: login, token refresh, logout, profile, password."""
+"""Authentication and the current user's account: login, logout, profile, password.
 
-from django.conf import settings
-from django.contrib.auth import update_session_auth_hash
+Logins are Django sessions: `login()` sets the `sessionid` cookie, `logout()` deletes the
+session on the server. See core/authentication.py.
+"""
+
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.http import JsonResponse
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from core.authentication import SessionAuthentication
+
+from ..serializers.auth import LoginSerializer
 
 
-class LoginView(TokenObtainPairView):
-    def post(self, request, *args, **kwargs):
-        response = super().post(request, *args, **kwargs)
-        if response.status_code == 200:
-            acces_token = response.data.get('access')
-            refresh_token = response.data.get('refresh')
-
-            response.set_cookie(
-                key=settings.SIMPLE_JWT['AUTH_COOKIE'],
-                value=acces_token,
-                httponly=True,
-                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
-                samesite='Lax',
-                path='/',
-            )
-            response.set_cookie(
-                key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
-                value=refresh_token,
-                httponly=True,
-                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
-                samesite='Lax',
-                path='/api/auth/refresh/',
-            )
-        return response
+def _current_user(user):
+    return {
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'role': user.role,
+        'message': 'Authenticated',
+    }
 
 
-class RefreshTokenView(TokenRefreshView):
-    def post(self, request, *args, **kwargs):
-        refresh = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
-        if refresh:
-            request.data['refresh'] = refresh
+class LoginView(APIView):
+    """Log in with username and password. Returns the user, like GET /auth/me/."""
 
-        response = super().post(request, *args, **kwargs)
+    permission_classes = [AllowAny]
 
-        if response.status_code == 200:
-            access_token = response.data.get('access')
-            response.set_cookie(
-                key=settings.SIMPLE_JWT['AUTH_COOKIE'],
-                value=access_token,
-                httponly=True,
-                secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
-                samesite='Lax',
-                path='/',
-            )
-            response.data = {'detail': 'Refresh success'}
-        return response
+    def post(self, request):
+        # Logged-out requests skip DRF's CSRF check, so check here: a foreign site must not
+        # be able to log the browser into another account.
+        SessionAuthentication().enforce_csrf(request)
+
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = authenticate(request, **serializer.validated_data)
+        if user is None:
+            return Response({'detail': 'Invalid username or password.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        login(request, user)
+        return Response(_current_user(user))
 
 
 class LogoutView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
-        try:
-            refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-        except Exception:
-            pass
-
-        response = Response({'detail': 'Logout successful'}, status=status.HTTP_200_OK)
-        response.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE'])
-        response.delete_cookie(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
-        return response
+        logout(request)
+        return Response({'detail': 'Logout successful'}, status=status.HTTP_200_OK)
 
 
+@method_decorator(ensure_csrf_cookie, name='dispatch')
 class UserMeView(APIView):
+    """The logged-in user. Also hands out the `csrftoken` cookie, which the frontend
+    needs before it can log in or send any change."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response(
-            {
-                'id': request.user.id,
-                'username': request.user.username,
-                'email': request.user.email,
-                'role': request.user.role,
-                'message': 'Authenticated',
-            }
-        )
+        return Response(_current_user(request.user))
 
     def patch(self, request):
         user = request.user

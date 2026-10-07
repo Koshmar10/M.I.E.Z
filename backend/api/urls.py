@@ -5,7 +5,6 @@ from .views import assistant, auth, employees, hr, inventory, it, legacy, notifi
 urlpatterns = [
     # auth
     path('auth/login/', auth.LoginView.as_view(), name='login'),
-    path('auth/refresh/', auth.RefreshTokenView.as_view(), name='refresh'),
     path('auth/logout/', auth.LogoutView.as_view(), name='logout'),
     path('auth/me/', auth.UserMeView.as_view(), name='user_me'),
     path('auth/change-password/', auth.ChangePasswordView.as_view(), name='change_password'),

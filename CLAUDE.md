@@ -2,9 +2,9 @@
 
 ## Stack
 
-- **Backend**: Python 3.13, Django 5.2, Django REST Framework, SimpleJWT, PostgreSQL (via `dj-database-url`). Dependencies are managed with **uv** (`backend/pyproject.toml` + `backend/uv.lock`)
+- **Backend**: Python 3.13, Django 5.2, Django REST Framework, PostgreSQL (via `dj-database-url`). Dependencies are managed with **uv** (`backend/pyproject.toml` + `backend/uv.lock`)
 - **Frontend**: React + Vite, TypeScript (strict)
-- **Auth**: Cookie-based JWT (`access_token` / `refresh_token` httpOnly cookies)
+- **Auth**: Django sessions. Logging in sets an httpOnly `sessionid` cookie. Every POST/PUT/PATCH/DELETE must send the `csrftoken` cookie's value in an `X-CSRFToken` header. `GET /api/auth/me/` hands out the `csrftoken` cookie.
 - **Infrastructure**: Docker Compose, EC2 (Ubuntu), GitHub Actions CI/CD
 
 ---
@@ -64,7 +64,7 @@ backend/api/
 | Need | Use this |
 |------|----------|
 | User model | Extend `AbstractUser` (already done in `api/models/user.py`) |
-| Authentication | `CustomAuthentication` in `core/authenticate.py` (reads JWT from cookies) |
+| Authentication | Django's `authenticate()` / `login()` / `logout()` (see `api/views/auth.py`); DRF `SessionAuthentication` via `core/authentication.py`, which only changes "not logged in" to 401. Never add tokens or custom cookie handling. |
 | Password hashing | `user.set_password()` — never hash manually |
 | Permission checks | `permission_classes = [IsAuthenticated, role_required(User.Role.CEO, User.Role.HR)]` (from `api/permissions.py`). Use per-method lists when methods differ: `role_required(get=[...], post=[...])`. Never write `if request.user.role ...: return 403` inside a view. |
 | Object lookup with 404 | `get_object_or_404(Model, ...)` |
@@ -128,7 +128,9 @@ backend/api/
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | Full Postgres URL (`postgresql://user:pass@host:port/db`) |
-| `DJANGO_SECRET_KEY` | Django secret key — insecure default used locally only |
+| `DJANGO_SECRET_KEY` | Django secret key — insecure default used locally only. Also signs sessions: changing it logs everyone out |
+| `CSRF_TRUSTED_ORIGINS` | Comma-separated address(es) the frontend is opened at, e.g. `http://203.0.113.10,https://miez.example.com`. Defaults to the Vite dev server. Without it, every login and change fails CSRF |
+| `SECURE_COOKIES` | `True` once the site is served over HTTPS (session and CSRF cookies become HTTPS-only) |
 | `DEBUG` | `True` locally, `False` on EC2 |
 | `POSTGRES_DB` | Database name (used by docker-compose) |
 | `POSTGRES_USER` | Database user |

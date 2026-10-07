@@ -5,8 +5,6 @@ from django.conf import settings
 
 from api.models import User
 
-ACCESS_COOKIE = settings.SIMPLE_JWT['AUTH_COOKIE']
-REFRESH_COOKIE = settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH']
 CREDENTIALS = {'username': 'testuser', 'password': 'testpass123'}
 
 
@@ -15,17 +13,16 @@ def user():
     return User.objects.create_user(**CREDENTIALS)
 
 
-def test_login_sets_cookies(api_client):
+def test_login_sets_session_cookie(api_client):
     response = api_client.post('/api/auth/login/', CREDENTIALS, format='json')
 
     assert response.status_code == 200
-    assert ACCESS_COOKIE in response.cookies
-    assert REFRESH_COOKIE in response.cookies
-    assert response.cookies[ACCESS_COOKIE]['httponly']
+    assert response.data['username'] == CREDENTIALS['username']
+    assert response.cookies[settings.SESSION_COOKIE_NAME]['httponly']
 
 
 def test_protected_route_access(api_client):
-    api_client.post('/api/auth/login/', CREDENTIALS)
+    api_client.post('/api/auth/login/', CREDENTIALS, format='json')
 
     response = api_client.get('/api/auth/me/')
 
@@ -41,9 +38,8 @@ def test_access_denied_without_cookie(api_client):
     assert response.status_code == 401
 
 
-def test_logout_clears_cookies(api_client):
-    api_client.post('/api/auth/login/', CREDENTIALS)
+def test_logout_ends_session(api_client):
+    api_client.post('/api/auth/login/', CREDENTIALS, format='json')
 
-    response = api_client.post('/api/auth/logout/')
-
-    assert response.cookies[ACCESS_COOKIE].value == ''
+    assert api_client.post('/api/auth/logout/').status_code == 200
+    assert api_client.get('/api/auth/me/').status_code == 401

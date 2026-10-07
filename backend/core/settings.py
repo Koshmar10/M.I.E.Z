@@ -11,7 +11,6 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
-from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -67,7 +66,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'rest_framework_simplejwt',  # <--- Adaugă această linie
     'corsheaders',
     'django_filters',
     'django_crontab',
@@ -156,28 +154,28 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': ('core.authenticate.CustomAuthentication',),
+    'DEFAULT_AUTHENTICATION_CLASSES': ('core.authentication.SessionAuthentication',),
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
     ],
     'EXCEPTION_HANDLER': 'core.exception_handler.custom_exception_handler',
 }
 
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'AUTH_COOKIE': 'access_token',
-    'AUTH_COOKIE_REFRESH': 'refresh_token',
-    'AUTH_COOKIE_HTTP_ONLY': True,
-    'AUTH_COOKIE_PATH': '/',
-    'AUTH_COOKIE_SAMESITE': 'Lax',
-    # Send auth cookies over HTTPS only outside local development.
-    'AUTH_COOKIE_SECURE': False,
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': os.environ.get('JWT_SIGNING_KEY', 'miez-jwt-key-min-32-bytes-long-very-secure'),
-}
+# ── Login sessions ───────────────────────────────────────────────────────────
+# Logging in sets an httpOnly `sessionid` cookie; the session lives in the database.
+# A session ends after a day without requests (each request extends it).
+SESSION_COOKIE_AGE = 60 * 60 * 24
+SESSION_SAVE_EVERY_REQUEST = True
+
+# Requests that change data must send the `csrftoken` cookie's value in an `X-CSRFToken` header.
+# The frontend reaches the API through a proxy, so the browser's Origin (the frontend's address)
+# has to be listed here. Set CSRF_TRUSTED_ORIGINS (comma-separated) in each environment.
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()
+] or ['http://localhost:5173', 'http://127.0.0.1:5173']
+
+# Only send the session and CSRF cookies over HTTPS. Turn on once the site is served over HTTPS.
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = os.environ.get('SECURE_COOKIES', 'False') == 'True'
 
 AUTH_USER_MODEL = 'api.User'
 

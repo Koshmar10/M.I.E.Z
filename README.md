@@ -151,7 +151,7 @@ M.I.E.Z is built around five roles, each with a tailored view of the platform an
 
 ## Tech at a glance
 
-- **Backend** — Python 3.13, Django 5.2 + Django REST Framework, SimpleJWT (cookie-based auth), PostgreSQL
+- **Backend** — Python 3.13, Django 5.2 + Django REST Framework, Django session auth, PostgreSQL
 - **Frontend** — React + Vite + TypeScript
 - **AI** — Anthropic Claude (the assistant and report/HR agents)
 - **Automation** — signal- and schedule-driven workflow engine with SMTP email

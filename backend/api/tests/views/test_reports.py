@@ -1,147 +1,120 @@
 """Tests for api/views/reports.py."""
 
-import tempfile
+from itertools import count
 
-from django.urls import reverse
-from django.utils import timezone
-from rest_framework import status
-from rest_framework.test import APITestCase
+from model_bakery import baker
 
-from api.models import Report, User
+from api.models import Report
 
-
-def _make_user(username, role=User.Role.HR, **kwargs):
-    kwargs.setdefault('email', f'{username}@test.com')
-    return User.objects.create_user(username=username, password='testpass', role=role, **kwargs)
+_report_ids = count(1)
 
 
-def _make_report(**kwargs):
-    defaults = {
-        'name': 'Test Report',
-        'slug': 'test-report',
-        'category': 'HR',
-        'period': 'Feb 2026',
-        'file_size_kb': 78,
-        'generated_at': timezone.now(),
-    }
-    defaults.update(kwargs)
-    return Report.objects.create(**defaults)
+def _report(**fields) -> Report:
+    # slug defaults to '' but must be unique, so give each report its own
+    return baker.make(Report, slug=f'report-{next(_report_ids)}', **fields)
 
 
-class ReportListTests(APITestCase):
-    def setUp(self):
-        Report.objects.all().delete()
-        self.user = _make_user('hruser')
-        self.client.force_authenticate(user=self.user)
-        self.url = reverse('report_list')
-
-    def test_ceo_sees_reports_across_all_categories(self):
-        _make_report(slug='rep-1', name='Report 1', category='HR')
-        _make_report(slug='rep-2', name='Report 2', category='Sales')
-        ceo = _make_user('ceo_list', role=User.Role.CEO)
-        self.client.force_authenticate(user=ceo)
-        response = self.client.get(self.url)
-        assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) == 2
-
-    def test_non_ceo_only_sees_own_category(self):
-        _make_report(slug='rep-1', name='Report 1', category='HR')
-        _make_report(slug='rep-2', name='Report 2', category='Sales')
-        # self.user is an HR user; must not see the Sales report.
-        response = self.client.get(self.url)
-        assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) == 1
-        assert response.data[0]['category'] == 'HR'
-
-    def test_filter_by_forbidden_category_returns_403(self):
-        _make_report(slug='sales-rep', name='Sales Report', category='Sales')
-        response = self.client.get(self.url, {'category': 'Sales'})
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    def test_returns_correct_metadata_fields(self):
-        _make_report()
-        response = self.client.get(self.url)
-        assert response.status_code == status.HTTP_200_OK
-        report = response.data[0]
-        for field in ('id', 'name', 'slug', 'category', 'period', 'file_size_kb', 'generated_at', 'file_available'):
-            assert field in report
-
-    def test_filter_by_category(self):
-        _make_report(slug='hr-rep', name='HR Report', category='HR')
-        _make_report(slug='sales-rep', name='Sales Report', category='Sales')
-        response = self.client.get(self.url, {'category': 'HR'})
-        assert response.status_code == status.HTTP_200_OK
-        assert len(response.data) == 1
-        assert response.data[0]['category'] == 'HR'
-
-    def test_unauthenticated_returns_401(self):
-        self.client.force_authenticate(user=None)
-        response = self.client.get(self.url)
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+def _report_file(tmp_path):
+    path = tmp_path / 'report.csv'
+    path.write_text('Name,Value\nAlice,100\n')
+    return str(path)
 
 
-class ReportDownloadTests(APITestCase):
-    def setUp(self):
-        self.user = _make_user('hruser2')
-        self.client.force_authenticate(user=self.user)
-
-    def _url(self, report_id):
-        return reverse('report_download', kwargs={'id': report_id})
-
-    def test_download_returns_file_response(self):
-        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False, mode='w') as f:
-            f.write('Name,Value\nAlice,100\n')
-            tmp_path = f.name
-
-        report = _make_report(slug='dl-report', file_path=tmp_path)
-        response = self.client.get(self._url(report.id))
-        assert response.status_code == status.HTTP_200_OK
-        assert 'text/csv' in response.get('Content-Type', '')
-
-    def test_download_returns_404_when_file_path_missing(self):
-        report = _make_report(slug='no-file-report', file_path='')
-        response = self.client.get(self._url(report.id))
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-
-    def test_download_returns_404_when_file_does_not_exist_on_disk(self):
-        report = _make_report(slug='ghost-report', file_path='/tmp/nonexistent_miez_report.csv')
-        response = self.client.get(self._url(report.id))
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-
-    def test_download_returns_404_for_unknown_report(self):
-        response = self.client.get(self._url(99999))
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-
-    def test_download_forbidden_for_other_category(self):
-        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False, mode='w') as f:
-            f.write('Name,Value\nAlice,100\n')
-            tmp_path = f.name
-
-        # self.user is HR; a Sales report must not be downloadable.
-        report = _make_report(slug='sales-dl', category='Sales', file_path=tmp_path)
-        response = self.client.get(self._url(report.id))
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+# ── List ─────────────────────────────────────────────────────────────────────
 
 
-class ReportGenerateTests(APITestCase):
-    def setUp(self):
-        self.ceo = _make_user('ceo_user', role=User.Role.CEO)
-        self.hr_user = _make_user('hr_user2', role=User.Role.HR)
-        self.report = _make_report(slug='gen-report')
+def test_ceo_sees_reports_across_all_categories(ceo_client):
+    _report(category='HR')
+    _report(category='Sales')
 
-    def _url(self, slug):
-        return reverse('report_generate', kwargs={'slug': slug})
+    response = ceo_client.get('/api/reports/')
 
-    def test_non_ceo_gets_403(self):
-        self.client.force_authenticate(user=self.hr_user)
-        response = self.client.post(self._url(self.report.slug))
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.status_code == 200
+    assert len(response.data) == 2
 
-    def test_unauthenticated_gets_401(self):
-        response = self.client.post(self._url(self.report.slug))
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_invalid_slug_returns_404(self):
-        self.client.force_authenticate(user=self.ceo)
-        response = self.client.post(self._url('does-not-exist'))
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+def test_non_ceo_only_sees_own_category(hr_client):
+    _report(category='HR')
+    _report(category='Sales')
+
+    response = hr_client.get('/api/reports/')
+
+    assert response.status_code == 200
+    assert [r['category'] for r in response.data] == ['HR']
+
+
+def test_filter_by_forbidden_category_returns_403(hr_client):
+    _report(category='Sales')
+    assert hr_client.get('/api/reports/', {'category': 'Sales'}).status_code == 403
+
+
+def test_returns_correct_metadata_fields(hr_client):
+    _report(category='HR')
+
+    response = hr_client.get('/api/reports/')
+
+    assert response.status_code == 200
+    expected = {'id', 'name', 'slug', 'category', 'period', 'file_size_kb', 'generated_at', 'file_available'}
+    assert expected <= response.data[0].keys()
+
+
+def test_filter_by_category(hr_client):
+    _report(category='HR')
+    _report(category='Sales')
+
+    response = hr_client.get('/api/reports/', {'category': 'HR'})
+
+    assert response.status_code == 200
+    assert [r['category'] for r in response.data] == ['HR']
+
+
+def test_list_unauthenticated_returns_401(api_client):
+    assert api_client.get('/api/reports/').status_code == 401
+
+
+# ── Download ─────────────────────────────────────────────────────────────────
+
+
+def test_download_returns_file_response(hr_client, tmp_path):
+    report = _report(category='HR', file_path=_report_file(tmp_path))
+
+    response = hr_client.get(f'/api/reports/{report.id}/download/')
+
+    assert response.status_code == 200
+    assert 'text/csv' in response['Content-Type']
+
+
+def test_download_returns_404_when_file_path_missing(hr_client):
+    report = _report(category='HR', file_path='')
+    assert hr_client.get(f'/api/reports/{report.id}/download/').status_code == 404
+
+
+def test_download_returns_404_when_file_does_not_exist_on_disk(hr_client, tmp_path):
+    report = _report(category='HR', file_path=str(tmp_path / 'missing.csv'))
+    assert hr_client.get(f'/api/reports/{report.id}/download/').status_code == 404
+
+
+def test_download_returns_404_for_unknown_report(hr_client):
+    assert hr_client.get('/api/reports/99999/download/').status_code == 404
+
+
+def test_download_forbidden_for_other_category(hr_client, tmp_path):
+    report = _report(category='Sales', file_path=_report_file(tmp_path))
+    assert hr_client.get(f'/api/reports/{report.id}/download/').status_code == 403
+
+
+# ── Generate ─────────────────────────────────────────────────────────────────
+
+
+def test_generate_non_ceo_gets_403(hr_client):
+    report = _report()
+    assert hr_client.post(f'/api/reports/generate/{report.slug}/').status_code == 403
+
+
+def test_generate_unauthenticated_gets_401(api_client):
+    report = _report()
+    assert api_client.post(f'/api/reports/generate/{report.slug}/').status_code == 401
+
+
+def test_generate_invalid_slug_returns_404(ceo_client):
+    assert ceo_client.post('/api/reports/generate/does-not-exist/').status_code == 404

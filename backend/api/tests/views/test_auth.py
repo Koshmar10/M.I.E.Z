@@ -1,49 +1,49 @@
 """Tests for api/views/auth.py."""
 
+import pytest
 from django.conf import settings
-from django.contrib.auth import get_user_model
-from django.urls import reverse
-from rest_framework import status
-from rest_framework.test import APITestCase
+
+from api.models import User
+
+ACCESS_COOKIE = settings.SIMPLE_JWT['AUTH_COOKIE']
+REFRESH_COOKIE = settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH']
+CREDENTIALS = {'username': 'testuser', 'password': 'testpass123'}
 
 
-class AuthTests(APITestCase):
-    def setUp(self):
-        self.username = 'testuser'
-        self.password = 'testpass123'
-        User = get_user_model()
-        self.user = User.objects.create_user(username=self.username, password=self.password)
-        self.login_url = reverse('login')
-        self.me_url = reverse('user_me')
-        self.logout_url = reverse('logout')
+@pytest.fixture(autouse=True)
+def user():
+    return User.objects.create_user(**CREDENTIALS)
 
-    def test_login_sets_cookies(self):
-        data = {'username': self.username, 'password': self.password}
-        response = self.client.post(self.login_url, data, format='json')
 
-        assert response.status_code == status.HTTP_200_OK
-        assert settings.SIMPLE_JWT['AUTH_COOKIE'] in response.cookies
-        assert settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'] in response.cookies
-        assert response.cookies[settings.SIMPLE_JWT['AUTH_COOKIE']]['httponly']
+def test_login_sets_cookies(api_client):
+    response = api_client.post('/api/auth/login/', CREDENTIALS, format='json')
 
-    def test_protected_route_access(self):
-        self.client.post(self.login_url, {'username': self.username, 'password': self.password})
-        response = self.client.get(self.me_url)
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        # Ensure expected fields exist in the JSON response. The user model may not
-        # always expose a `role` attribute, so assert presence of core fields.
-        assert data.get('username') == self.username
-        assert 'email' in data
-        assert 'message' in data
+    assert response.status_code == 200
+    assert ACCESS_COOKIE in response.cookies
+    assert REFRESH_COOKIE in response.cookies
+    assert response.cookies[ACCESS_COOKIE]['httponly']
 
-    def test_access_denied_without_cookie(self):
-        response = self.client.get(self.me_url)
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_logout_clears_cookies(self):
-        self.client.post(self.login_url, {'username': self.username, 'password': self.password})
+def test_protected_route_access(api_client):
+    api_client.post('/api/auth/login/', CREDENTIALS)
 
-        response = self.client.post(self.logout_url)
-        access_cookie = response.cookies.get(settings.SIMPLE_JWT['AUTH_COOKIE'])
-        assert access_cookie.value == ''
+    response = api_client.get('/api/auth/me/')
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data['username'] == CREDENTIALS['username']
+    assert 'email' in data
+    assert 'message' in data
+
+
+def test_access_denied_without_cookie(api_client):
+    response = api_client.get('/api/auth/me/')
+    assert response.status_code == 401
+
+
+def test_logout_clears_cookies(api_client):
+    api_client.post('/api/auth/login/', CREDENTIALS)
+
+    response = api_client.post('/api/auth/logout/')
+
+    assert response.cookies[ACCESS_COOKIE].value == ''

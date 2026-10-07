@@ -1,56 +1,22 @@
 """Tests for api/views/legacy.py."""
 
-from django.test import Client, TestCase
+import pytest
 
 
-class IsEvenTests(TestCase):
-    def setUp(self):
-        self.client = Client()
+@pytest.mark.parametrize(('number', 'even'), [(4, True), (3, False), (0, True), (-2, True), (-7, False)])
+def test_is_even(client, number, even):
+    response = client.get('/api/is_even/', {'number': number})
+    assert response.status_code == 200
+    assert response.json()['even'] is even
 
-    # ── Success cases ──────────────────────────────────────────
 
-    def test_even_number(self):
-        response = self.client.get('/api/is_even/', {'number': 4})
-        assert response.status_code == 200
-        assert response.json()['even'] == True
+@pytest.mark.parametrize('params', [{}, {'number': 'abc'}, {'number': '2.5'}])
+def test_is_even_rejects_missing_or_non_integer_input(client, params):
+    response = client.get('/api/is_even/', params)
+    assert response.status_code == 400
+    assert 'error' in response.json()
 
-    def test_odd_number(self):
-        response = self.client.get('/api/is_even/', {'number': 3})
-        assert response.status_code == 200
-        assert response.json()['even'] == False
 
-    def test_zero(self):
-        response = self.client.get('/api/is_even/', {'number': 0})
-        assert response.status_code == 200
-        assert response.json()['even'] == True
-
-    def test_negative_even(self):
-        response = self.client.get('/api/is_even/', {'number': -2})
-        assert response.status_code == 200
-        assert response.json()['even'] == True
-
-    def test_negative_odd(self):
-        response = self.client.get('/api/is_even/', {'number': -7})
-        assert response.status_code == 200
-        assert response.json()['even'] == False
-
-    # ── Fail cases ─────────────────────────────────────────────
-
-    def test_missing_number(self):
-        response = self.client.get('/api/is_even/')
-        assert response.status_code == 400
-        assert 'error' in response.json()
-
-    def test_string_input(self):
-        response = self.client.get('/api/is_even/', {'number': 'abc'})
-        assert response.status_code == 400
-        assert 'error' in response.json()
-
-    def test_float_string(self):
-        response = self.client.get('/api/is_even/', {'number': '2.5'})
-        assert response.status_code == 400
-        assert 'error' in response.json()
-
-    def test_post_not_allowed(self):
-        response = self.client.post('/api/is_even/', {'number': 2})
-        assert response.status_code == 405  # method not allowed
+def test_is_even_post_not_allowed(client):
+    response = client.post('/api/is_even/', {'number': 2})
+    assert response.status_code == 405

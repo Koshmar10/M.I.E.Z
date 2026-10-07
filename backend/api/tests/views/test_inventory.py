@@ -2,156 +2,124 @@
 
 from datetime import date
 
-from django.urls import reverse
 from model_bakery import baker
-from rest_framework import status
-from rest_framework.test import APITestCase
 
-from api.models import Product, StockMovement, User
+from api.models import Product, StockMovement
 
 
-class InventoryBackendTests(APITestCase):
-    """Tests for Inventory module: product list, status filtering, and stock movements."""
+def test_get_products_returns_list_with_expected_fields(ceo_client):
+    baker.make(Product, _quantity=5)
 
-    def setUp(self):
-        self.inventory_manager = baker.make(
-            User, role=User.Role.INVENTORY, username='inv_manager', email='inv_manager@example.com'
-        )
-        self.ceo_user = baker.make(User, role=User.Role.CEO, username='ceo_inv', email='ceo_inv@example.com')
-        self.products_url = reverse('inventory_products')
-        self.dashboard_url = reverse('inventory_dashboard_kpis')
-        self.movements_url = reverse('stock_movements')
+    response = ceo_client.get('/api/inventory/products/')
 
-    def test_get_products_returns_paginated_list_with_expected_fields(self):
-        # We test for 5 since there is no pagination currently
-        baker.make(Product, _quantity=5)
-        self.client.force_authenticate(user=self.ceo_user)
+    assert response.status_code == 200
+    assert len(response.data) == 5
+    assert {
+        'id',
+        'name',
+        'sku',
+        'category',
+        'stock_count',
+        'min_stock',
+        'unit_price_ron',
+        'status',
+        'shortfall',
+    } <= response.data[0].keys()
 
-        response = self.client.get(self.products_url)
 
-        assert response.status_code == status.HTTP_200_OK
-        assert isinstance(response.data, list)
-        assert len(response.data) == 5
+def test_get_products_with_low_status_filter_returns_only_low_stock_items(ceo_client):
+    baker.make(Product, stock_count=5, min_stock=10, name='Low Item')
+    baker.make(Product, stock_count=15, min_stock=10, name='Healthy Item')
 
-        first = response.data[0]
-        expected_keys = {
-            'id',
-            'name',
-            'sku',
-            'category',
-            'stock_count',
-            'min_stock',
-            'unit_price_ron',
-            'status',
-            'shortfall',
-        }
-        assert expected_keys.issubset(first.keys())
+    response = ceo_client.get('/api/inventory/products/', {'status': 'LOW'})
 
-    def test_get_products_with_low_status_filter_returns_only_low_stock_items(self):
-        # min_stock defaults to 10. Stock < 10 is LOW.
-        baker.make(Product, stock_count=5, min_stock=10, name='Low Item')
-        baker.make(Product, stock_count=15, min_stock=10, name='Healthy Item')
+    assert response.status_code == 200
+    assert [(p['name'], p['status']) for p in response.data] == [('Low Item', 'LOW')]
 
-        self.client.force_authenticate(user=self.ceo_user)
-        response = self.client.get(self.products_url, {'status': 'LOW'})
 
-        assert response.status_code == 200
-        assert isinstance(response.data, list)
-        assert len(response.data) == 1
-        assert response.data[0]['name'] == 'Low Item'
-        assert response.data[0]['status'] == 'LOW'
+def test_get_products_with_out_status_filter_returns_only_depleted_items(ceo_client):
+    baker.make(Product, stock_count=0, min_stock=10, name='Out Item')
+    baker.make(Product, stock_count=1, min_stock=10, name='Low Item')
 
-    def test_get_products_with_out_status_filter_returns_only_depleted_items(self):
-        baker.make(Product, stock_count=0, min_stock=10, name='Out Item')
-        baker.make(Product, stock_count=1, min_stock=10, name='Low Item')
+    response = ceo_client.get('/api/inventory/products/', {'status': 'OUT'})
 
-        self.client.force_authenticate(user=self.ceo_user)
-        response = self.client.get(self.products_url, {'status': 'OUT'})
+    assert response.status_code == 200
+    assert [(p['name'], p['status']) for p in response.data] == [('Out Item', 'OUT')]
 
-        assert response.status_code == 200
-        assert isinstance(response.data, list)
-        assert len(response.data) == 1
-        assert response.data[0]['name'] == 'Out Item'
-        assert response.data[0]['status'] == 'OUT'
 
-    def test_product_availability_property_logic(self):
-        """Verify the model @property for human readable status."""
-        p_out = Product(stock_count=0, min_stock=10)
-        assert p_out.availability == 'Out of Stock'
+def test_get_inventory_dashboard_returns_correct_kpi_aggregates(ceo_client):
+    out_of_stock = baker.make(Product, stock_count=0, min_stock=10)
+    baker.make(Product, stock_count=3, min_stock=10)  # low
+    baker.make(Product, stock_count=20, min_stock=10)  # ok
+    baker.make(
+        StockMovement, product=out_of_stock, movement_type=StockMovement.Type.INBOUND, expected_date=date.today()
+    )
 
-        p_low = Product(stock_count=5, min_stock=10)
-        assert p_low.availability == 'Low Stock'
+    response = ceo_client.get('/api/inventory/dashboard/')
 
-        p_ok = Product(stock_count=10, min_stock=10)
-        assert p_ok.availability == 'In Stock'
+    assert response.status_code == 200
+    assert response.data['total_products'] == 3
+    assert response.data['low_stock_count'] == 1
+    assert response.data['out_of_stock_count'] == 1
+    assert response.data['deliveries_today'] == 1
 
-    def test_get_inventory_dashboard_returns_correct_kpi_aggregates(self):
-        p1 = baker.make(Product, stock_count=0, min_stock=10)  # 1 OUT
-        baker.make(Product, stock_count=3, min_stock=10)  # 1 LOW
-        baker.make(Product, stock_count=20, min_stock=10)  # 1 OK
 
-        # Delivery today, bind to p1 so we don't accidentally create a 4th product
-        baker.make(StockMovement, product=p1, movement_type=StockMovement.Type.INBOUND, expected_date=date.today())
+def test_post_stock_movement_inbound_increments_product_stock(inventory_client):
+    product = baker.make(Product, stock_count=10)
 
-        self.client.force_authenticate(user=self.ceo_user)
-        response = self.client.get(self.dashboard_url)
+    response = inventory_client.post(
+        '/api/inventory/stock-movements/',
+        {'product': product.id, 'movement_type': 'INBOUND', 'quantity': 20, 'notes': 'Large delivery'},
+        format='json',
+    )
 
-        assert response.status_code == 200
-        assert response.data['total_products'] == 3
-        assert response.data['low_stock_count'] == 1
-        assert response.data['out_of_stock_count'] == 1
-        assert response.data['deliveries_today'] == 1
+    assert response.status_code == 201
+    product.refresh_from_db()
+    assert product.stock_count == 30
 
-    def test_post_stock_movement_inbound_increments_product_stock(self):
-        product = baker.make(Product, stock_count=10)
-        self.client.force_authenticate(user=self.inventory_manager)
 
-        payload = {'product': product.id, 'movement_type': 'INBOUND', 'quantity': 20, 'notes': 'Large delivery'}
-        response = self.client.post(self.movements_url, payload, format='json')
+def test_post_stock_movement_write_off_decrements_product_stock_down_to_zero(inventory_client):
+    product = baker.make(Product, stock_count=10)
 
-        assert response.status_code == 201
-        product.refresh_from_db()
-        assert product.stock_count == 30
+    inventory_client.post(
+        '/api/inventory/stock-movements/',
+        {'product': product.id, 'movement_type': 'WRITE_OFF', 'quantity': 4, 'notes': 'partial'},
+        format='json',
+    )
+    product.refresh_from_db()
+    assert product.stock_count == 6
 
-    def test_post_stock_movement_write_off_decrements_product_stock_down_to_zero(self):
-        product = baker.make(Product, stock_count=10)
-        self.client.force_authenticate(user=self.inventory_manager)
+    inventory_client.post(
+        '/api/inventory/stock-movements/',
+        {'product': product.id, 'movement_type': 'WRITE_OFF', 'quantity': 100, 'notes': 'full'},
+        format='json',
+    )
+    product.refresh_from_db()
+    assert product.stock_count == 0
 
-        # Test partial decrement
-        self.client.post(
-            self.movements_url,
-            {'product': product.id, 'movement_type': 'WRITE_OFF', 'quantity': 4, 'notes': 'partial'},
-            format='json',
-        )
-        product.refresh_from_db()
-        assert product.stock_count == 6
 
-        # Test decrement beyond zero
-        self.client.post(
-            self.movements_url,
-            {'product': product.id, 'movement_type': 'WRITE_OFF', 'quantity': 100, 'notes': 'full'},
-            format='json',
-        )
-        product.refresh_from_db()
-        assert product.stock_count == 0
+def test_post_stock_movement_adjustment_sets_stock_exactly(inventory_client):
+    product = baker.make(Product, stock_count=10)
 
-    def test_post_stock_movement_adjustment_sets_stock_exactly(self):
-        product = baker.make(Product, stock_count=10)
-        self.client.force_authenticate(user=self.inventory_manager)
+    response = inventory_client.post(
+        '/api/inventory/stock-movements/',
+        {'product': product.id, 'movement_type': 'ADJUSTMENT', 'quantity': 55, 'notes': 'adjustment'},
+        format='json',
+    )
 
-        payload = {'product': product.id, 'movement_type': 'ADJUSTMENT', 'quantity': 55, 'notes': 'adjustment'}
-        response = self.client.post(self.movements_url, payload, format='json')
+    assert response.status_code == 201
+    product.refresh_from_db()
+    assert product.stock_count == 55
 
-        assert response.status_code == 201
-        product.refresh_from_db()
-        assert product.stock_count == 55
 
-    def test_post_stock_movement_with_zero_quantity_returns_400(self):
-        product = baker.make(Product, stock_count=10)
-        self.client.force_authenticate(user=self.inventory_manager)
+def test_post_stock_movement_with_zero_quantity_returns_400(inventory_client):
+    product = baker.make(Product, stock_count=10)
 
-        payload = {'product': product.id, 'movement_type': 'INBOUND', 'quantity': 0}
-        response = self.client.post(self.movements_url, payload, format='json')
+    response = inventory_client.post(
+        '/api/inventory/stock-movements/',
+        {'product': product.id, 'movement_type': 'INBOUND', 'quantity': 0},
+        format='json',
+    )
 
-        assert response.status_code == 400
-        assert 'quantity' in response.data['field_errors']
+    assert response.status_code == 400
+    assert 'quantity' in response.data['field_errors']

@@ -6,7 +6,6 @@ from .product import Product
 from .supplier import Supplier
 from .user import User
 from .workflow import Workflow
-from .workflow_log import WorkflowLog
 
 logger = logging.getLogger(__name__)
 
@@ -74,30 +73,41 @@ class StockMovement(models.Model):
         return self.movement_type == self.Type.ADJUSTMENT and self.product.stock_count < stock_before
 
     def _evaluate_stock_workflows(self):
-        from django.utils import timezone
+        """Run every active STOCK_BELOW_MINIMUM workflow whose threshold the product is now under."""
+        from ..workflow_engine import execute_workflow
 
+        product = self.product
         workflows = Workflow.objects.filter(trigger_type=Workflow.TriggerType.STOCK_BELOW_MINIMUM, is_active=True)
-        for wf in workflows:
-            config = wf.trigger_config or {}
+        for workflow in workflows:
+            config = workflow.trigger_config or {}
             target_product_id = config.get('product_id')
-            if target_product_id and str(target_product_id) != str(self.product.id):
+            if target_product_id and str(target_product_id) != str(product.id):
                 continue
 
-            threshold = config.get('threshold', getattr(self.product, 'min_stock', 10))
-            if self.product.stock_count < int(threshold):
-                actions_log = []
-                for action in wf.actions:
-                    act_type = action.get('type', str(action)) if isinstance(action, dict) else str(action)
-                    actions_log.append(
-                        {
-                            'action': act_type,
-                            'status': 'success',
-                            'message': f'Executed {act_type} for product {self.product.name} (stock {self.product.stock_count} < threshold {threshold})',
-                        }
-                    )
+            threshold = int(config.get('threshold', product.min_stock))
+            if product.stock_count < threshold:
+                execute_workflow(workflow, workflow.trigger_type, self._low_stock_context(threshold))
 
-                WorkflowLog.objects.create(
-                    workflow=wf, trigger_type=wf.trigger_type, actions_log=actions_log, success=True
-                )
-                wf.last_triggered_at = timezone.now()
-                wf.save(update_fields=['last_triggered_at'])
+    def _low_stock_context(self, threshold: int) -> dict:
+        """What the workflow actions need: message text, link, and the supplier to contact."""
+        product = self.product
+        supplier_id = self.supplier_id or (
+            StockMovement.objects.filter(product_id=product.id, movement_type=self.Type.INBOUND, supplier__isnull=False)
+            .order_by('-created_at')
+            .values_list('supplier_id', flat=True)
+            .first()
+        )
+        return {
+            'product_id': product.id,
+            'product_name': product.name,
+            'sku': product.sku,
+            'stock_count': product.stock_count,
+            'threshold': threshold,
+            'supplier_id': supplier_id,
+            'subject': f'[MIEZ] Low stock: {product.name}',
+            'message': (
+                f'Stock for {product.name} ({product.sku}) is down to {product.stock_count}, '
+                f'below the minimum of {threshold}.'
+            ),
+            'link': '/inventory/low-stock-alert',
+        }

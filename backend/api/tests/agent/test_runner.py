@@ -1,12 +1,11 @@
-"""Tests for the AgentRunner tool-use loop and tool decorator."""
+"""Tests for api/agent/runner.py."""
 
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import TestCase
 
-from api.agent import AgentRunner, Tool, agent_tool, get_registry
-from api.agent.operations import generate_report
+from api.agent import AgentRunner, Tool, get_registry
 from api.models import Report, User
 
 
@@ -141,6 +140,7 @@ class AgentRunnerLoopTests(TestCase):
 
     def test_get_system_prompt_includes_department_when_set(self):
         from api.models import Department
+
         dept = Department.objects.create(name='Human Resources', slug='hr-dept')
         user = User.objects.create_user(
             username='hr-dept-user',
@@ -236,19 +236,3 @@ class AgentRunnerLoopTests(TestCase):
         second_call_messages = client.messages.create.call_args_list[1].kwargs['messages']
         self.assertTrue(second_call_messages[-1]['content'][0]['is_error'])
         self.assertIn('boom', second_call_messages[-1]['content'][0]['content'])
-
-
-class AgentToolDecoratorTests(TestCase):
-    def test_agent_tool_decorator_attaches_name_description_schema(self):
-        @agent_tool(name='custom_tool', description='Custom tool description')
-        def sample_tool(title: str, count: int = 1):
-            return f'{title}:{count}'
-
-        metadata = sample_tool.agent_tool
-
-        self.assertEqual(metadata['name'], 'custom_tool')
-        self.assertEqual(metadata['description'], 'Custom tool description')
-        self.assertEqual(metadata['schema']['type'], 'object')
-        self.assertEqual(metadata['schema']['properties']['title']['type'], 'string')
-        self.assertEqual(metadata['schema']['properties']['count']['type'], 'integer')
-        self.assertEqual(metadata['schema']['required'], ['title'])

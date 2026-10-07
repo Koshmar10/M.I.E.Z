@@ -1,3 +1,5 @@
+"""End-to-end test of the HR insights agent cycle."""
+
 import json
 from datetime import timedelta
 from unittest.mock import patch
@@ -8,17 +10,7 @@ from django.utils import timezone
 from model_bakery import baker
 from rest_framework.test import APIClient
 
-from api.models import (
-    Attendance,
-    Contract,
-    Department,
-    Notification,
-    PayrollEntry,
-    Report,
-    User,
-    Workflow,
-    WorkflowLog,
-)
+from api.models import Attendance, Contract, Department, Notification, PayrollEntry, Report, User, Workflow, WorkflowLog
 
 
 class HrAgentIntegrationTest(TestCase):

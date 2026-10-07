@@ -1,13 +1,13 @@
-import tempfile
-from pathlib import Path
+"""Tests for api/views/reports.py."""
 
-from django.test import TestCase
+import tempfile
+
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from ..models import Report, User
+from api.models import Report, User
 
 
 def _make_user(username, role=User.Role.HR, **kwargs):

@@ -103,7 +103,8 @@ backend/api/
 - **Never mock the database.** Tests run against a real SQLite DB (configured in CI via `DATABASE_URL=sqlite:///:memory:`). Mocking the ORM hides real query bugs.
 - Create test users with `User.objects.create_user(...)` — never `User.objects.create(...)` (skips password hashing).
 - For authenticated endpoint tests, log in via the login endpoint and let the cookie be set, or force-authenticate with `client.force_authenticate(user=user)`.
-- Test file location: `backend/api/tests/` as a package, or `backend/api/tests.py`. One file per domain area (e.g. `test_auth.py`, `test_employees.py`, `test_departments.py`).
+- Test layout mirrors the app: a test for `api/<folder>/<module>.py` goes in `api/tests/<folder>/test_<module>.py`. For example, `api/views/sales.py` → `api/tests/views/test_sales.py`, `api/agent/runner.py` → `api/tests/agent/test_runner.py`, `api/workflow_engine.py` → `api/tests/test_workflow_engine.py`. Management commands go in `api/tests/management/`, cross-cutting end-to-end flows in `api/tests/integration/`. Every test folder needs an `__init__.py`.
+- Shared setup lives outside the test files: TestCase base classes in `api/tests/base.py`, object helpers (`make_ceo()`, `make_workflow()`, …) in `api/tests/factories.py`, pytest fixtures (`api_client`, `authenticated_client`) in `api/tests/conftest.py`. Reuse them instead of copying setup code into a new file.
 - Each test method should test one behaviour. Name tests as `test_<action>_<expected_outcome>` (e.g. `test_login_with_invalid_password_returns_401`).
 - Always test both the happy path and the main failure cases (missing fields, wrong role, unauthenticated).
 - Run tests: `uv run pytest` from `backend/` (uses in-memory SQLite when `DATABASE_URL=sqlite:///:memory:`, as in CI). pytest also collects plain `pytest`-style test functions, so `manage.py test` is not a substitute.

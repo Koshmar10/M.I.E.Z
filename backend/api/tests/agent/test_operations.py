@@ -1,7 +1,6 @@
-"""Tests for assistant tool functions."""
+"""Tests for the assistant tools in api/agent/operations.py."""
 
 from datetime import timedelta
-from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
@@ -11,15 +10,25 @@ from api.agent.operations import (
     create_ticket,
     generate_report,
     get_attendance_trend,
+    get_dashboard_summary,
     get_headcount_vs_workload,
     get_leave_patterns,
-    get_dashboard_summary,
+    query_employees,
     query_inventory,
     query_orders,
-    query_employees,
     query_tickets,
 )
-from api.models import Attendance, Customer, Department, LeaveRequest, Order, Product, Report, StockMovement, Ticket, User
+from api.models import (
+    Attendance,
+    Customer,
+    Department,
+    LeaveRequest,
+    Order,
+    Product,
+    Report,
+    Ticket,
+    User,
+)
 
 
 class AssistantToolTests(TestCase):
@@ -28,7 +37,9 @@ class AssistantToolTests(TestCase):
         self.hr_department = Department.objects.create(name='Human Resources', slug='hr')
 
         self.ceo = User.objects.create_user(username='ceo', email='ceo@example.com', role=User.Role.CEO)
-        self.hr_user = User.objects.create_user(username='hr', email='hr@example.com', role=User.Role.HR, department=self.hr_department)
+        self.hr_user = User.objects.create_user(
+            username='hr', email='hr@example.com', role=User.Role.HR, department=self.hr_department
+        )
         self.hr_manager = User.objects.create_user(
             username='hr-manager',
             email='hr-manager@example.com',
@@ -36,7 +47,9 @@ class AssistantToolTests(TestCase):
             department=self.hr_department,
             position='HR Manager',
         )
-        self.sales_user = User.objects.create_user(username='sales', email='sales@example.com', role=User.Role.SALES, department=self.department)
+        self.sales_user = User.objects.create_user(
+            username='sales', email='sales@example.com', role=User.Role.SALES, department=self.department
+        )
         self.it_user = User.objects.create_user(username='it', email='it@example.com', role=User.Role.IT)
 
     def _kpi(self, summary, label):
@@ -71,7 +84,9 @@ class AssistantToolTests(TestCase):
         self.assertIsInstance(summary['kpis'], list)
 
     def test_get_dashboard_summary_it_returns_standard_envelope(self):
-        Ticket.objects.create(ticket_number='TKT-D-001', title='Open ticket', status=Ticket.Status.OPEN, requested_by=self.it_user)
+        Ticket.objects.create(
+            ticket_number='TKT-D-001', title='Open ticket', status=Ticket.Status.OPEN, requested_by=self.it_user
+        )
 
         summary = get_dashboard_summary(module='it', user=self.it_user)
 
@@ -103,8 +118,15 @@ class AssistantToolTests(TestCase):
             get_dashboard_summary(module='finance', user=self.ceo)
 
     def test_query_tickets_new_returns_only_open_tickets(self):
-        ticket_one = Ticket.objects.create(ticket_number='TKT-00001', title='Printer issue', status=Ticket.Status.OPEN, requested_by=self.it_user)
-        Ticket.objects.create(ticket_number='TKT-00002', title='Network issue', status=Ticket.Status.IN_PROGRESS, requested_by=self.it_user)
+        ticket_one = Ticket.objects.create(
+            ticket_number='TKT-00001', title='Printer issue', status=Ticket.Status.OPEN, requested_by=self.it_user
+        )
+        Ticket.objects.create(
+            ticket_number='TKT-00002',
+            title='Network issue',
+            status=Ticket.Status.IN_PROGRESS,
+            requested_by=self.it_user,
+        )
 
         results = query_tickets(status='NEW', user=self.it_user)
 
@@ -113,7 +135,9 @@ class AssistantToolTests(TestCase):
         self.assertTrue(all(item['status'] == 'NEW' for item in results))
 
     def test_query_tickets_filters_priority_assigned_and_limit(self):
-        assigned = User.objects.create_user(username='assigned-tech', email='assigned-tech@example.com', role=User.Role.IT)
+        assigned = User.objects.create_user(
+            username='assigned-tech', email='assigned-tech@example.com', role=User.Role.IT
+        )
         for index in range(12):
             Ticket.objects.create(
                 ticket_number=f'TKT-2{index:04d}',
@@ -390,7 +414,8 @@ class AssistantToolTests(TestCase):
         self.assertTrue(result)
 
         hr_current_week = next(
-            row for row in result
+            row
+            for row in result
             if row['department'] == self.hr_department.name and row['week'] == current_week_start.isoformat()
         )
 
@@ -399,8 +424,12 @@ class AssistantToolTests(TestCase):
         self.assertEqual(hr_current_week['approved_leave_count'], 1)
         self.assertEqual(hr_current_week['unexcused_absence_count'], 4)
 
-        unexcused_entry = next(item for item in hr_current_week['employees_absent'] if item['absence_type'] == 'unexcused')
-        approved_entry = next(item for item in hr_current_week['employees_absent'] if item['absence_type'] == 'approved_leave')
+        unexcused_entry = next(
+            item for item in hr_current_week['employees_absent'] if item['absence_type'] == 'unexcused'
+        )
+        approved_entry = next(
+            item for item in hr_current_week['employees_absent'] if item['absence_type'] == 'approved_leave'
+        )
 
         self.assertEqual(unexcused_entry['name'], 'Ana Popa')
         self.assertEqual(unexcused_entry['count'], 4)
@@ -452,7 +481,9 @@ class AssistantToolTests(TestCase):
                 to_date=request_date + timedelta(days=1),
                 reason=f'Monday leave {index}',
             )
-            LeaveRequest.objects.filter(pk=request.pk).update(created_at=now - timedelta(weeks=index, days=today.weekday()))
+            LeaveRequest.objects.filter(pk=request.pk).update(
+                created_at=now - timedelta(weeks=index, days=today.weekday())
+            )
 
         medical_dates = [today - timedelta(days=1), today - timedelta(days=4), today - timedelta(days=10)]
         for index, request_date in enumerate(medical_dates):
@@ -549,6 +580,7 @@ class AssistantToolTests(TestCase):
             )
 
         from api.models import Product, StockMovement, Supplier
+
         product = Product.objects.create(name='Keyboard', sku='KB-001', unit_price_ron='20.00')
         supplier = Supplier.objects.create(name='Default Supplier')
         for index in range(8):

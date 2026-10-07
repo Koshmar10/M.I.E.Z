@@ -1,3 +1,5 @@
+"""Tests for the HR insight tools in api/agent/operations.py."""
+
 import datetime
 
 import pytest

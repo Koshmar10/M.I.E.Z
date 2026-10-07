@@ -1,3 +1,5 @@
+"""Tests for api/views/hr.py."""
+
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -6,74 +8,123 @@ from model_bakery import baker
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from api.models import Attendance, Contract, Department, LeaveRequest, PayrollEntry, User
+from api.models import Attendance, Contract, Department, LeaveRequest, Notification, PayrollEntry, Report, User
+from api.tests.base import DigestTestCase, HrEndpointsTestCase
 
 
-class HrEndpointsTestCase(APITestCase):
-    def setUp(self):
-        self.hr_user = baker.make(
-            User,
-            role=User.Role.HR,
-            username='hr_test_user',
-            email='hr_test_user@example.com',
-        )
-        self.hr_client = APITestCase.client_class()
-        self.hr_client.force_authenticate(user=self.hr_user)
-        self.hr_department = baker.make(Department, name='Human Resources', slug='hr')
+class TestHrDigestGenerateView(DigestTestCase):
+    def test_only_ceo_can_generate_digest(self):
+        hr_client = APITestCase.client_class()
+        hr_client.force_authenticate(user=self.hr_manager)
 
+        response = hr_client.post('/api/hr/digest/generate/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-class TestHrEmployeesEndpoint(HrEndpointsTestCase):
-    def test_get_employees_returns_full_list_with_expected_fields(self):
-        baker.make(
-            User,
-            role=User.Role.SALES,
-            department=self.hr_department,
-            first_name='Ana',
-            last_name='Pop',
-            username='ana.pop',
-            email='ana.pop@example.com',
-            employment_type=User.EmploymentType.FULL_TIME,
-            full_time=True,
-            is_active=True,
-        )
-        baker.make(
-            User,
-            role=User.Role.IT,
-            department=self.hr_department,
-            first_name='Mihai',
-            last_name='Ionescu',
-            username='mihai.ionescu',
-            email='mihai.ionescu@example.com',
-            employment_type=User.EmploymentType.CONTRACTOR,
-            full_time=False,
-            is_active=False,
-        )
-
-        response = self.hr_client.get('/api/employees/?page_size=100')
-
+    def test_ceo_can_generate_digest(self):
+        response = self.ceo_client.post('/api/hr/digest/generate/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertGreaterEqual(response.data['count'], 2)
-        self.assertGreaterEqual(len(response.data['results']), 2)
 
-        first = response.data['results'][0]
-        expected_keys = {
-            'id',
-            'username',
-            'email',
-            'first_name',
-            'last_name',
-            'phone',
-            'position',
-            'employment_type',
-            'start_date',
-            'salary_ron',
-            'address',
-            'role',
-            'is_active',
-            'full_time',
-            'department',
-        }
-        self.assertTrue(expected_keys.issubset(first.keys()))
+        data = response.json()
+        self.assertIn('success', data)
+        self.assertTrue(data['success'])
+        self.assertIn('digest', data)
+        self.assertIn('report_id', data)
+
+    def test_digest_generates_creates_report(self):
+        initial_count = Report.objects.filter(category=Report.Category.HR).count()
+
+        response = self.ceo_client.post('/api/hr/digest/generate/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        final_count = Report.objects.filter(category=Report.Category.HR).count()
+        self.assertEqual(final_count, initial_count + 1)
+
+        report = Report.objects.filter(category=Report.Category.HR).latest('generated_at')
+        self.assertIsNotNone(report.digest_data)
+        self.assertIn('critical', report.digest_data)
+
+    def test_digest_sends_notification_for_critical_issues(self):
+        current_month = self._current_month()
+        baker.make(PayrollEntry, paid=False, month=current_month)
+
+        initial_notifications = Notification.objects.filter(recipient=self.hr_manager).count()
+
+        response = self.ceo_client.post('/api/hr/digest/generate/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        data = response.json()
+        self.assertTrue(data['notifications_sent'])
+
+        final_notifications = Notification.objects.filter(recipient=self.hr_manager).count()
+        self.assertEqual(final_notifications, initial_notifications + 1)
+
+        notification = Notification.objects.filter(recipient=self.hr_manager).latest('created_at')
+        self.assertIn('Critical', notification.title)
+
+    def test_digest_does_not_send_notification_for_no_issues(self):
+        initial_notifications = Notification.objects.filter(recipient=self.hr_manager).count()
+
+        response = self.ceo_client.post('/api/hr/digest/generate/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        final_notifications = Notification.objects.filter(recipient=self.hr_manager).count()
+        self.assertLessEqual(final_notifications - initial_notifications, 1)
+
+    def test_report_stores_full_digest_data(self):
+        response = self.ceo_client.post('/api/hr/digest/generate/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        report = Report.objects.get(id=response.json()['report_id'])
+        self.assertIsNotNone(report.digest_data)
+        self.assertIn('week', report.digest_data)
+        self.assertIn('generated_at', report.digest_data)
+        self.assertIn('summary_line', report.digest_data)
+        self.assertEqual(report.generated_by, self.ceo_user)
+
+    def test_unauthenticated_user_cannot_generate_digest(self):
+        client = APITestCase.client_class()
+        response = client.post('/api/hr/digest/generate/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class TestDigestNotifications(DigestTestCase):
+    def test_notification_sent_to_all_active_hr_managers(self):
+        hr_managers = [baker.make(User, role=User.Role.HR, is_active=True) for _ in range(3)]
+        baker.make(PayrollEntry, paid=False, month=self._current_month())
+
+        response = self.ceo_client.post('/api/hr/digest/generate/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        for hr_manager in hr_managers:
+            self.assertTrue(Notification.objects.filter(recipient=hr_manager, title__icontains='Critical').exists())
+
+    def test_notification_body_uses_summary_line(self):
+        baker.make(PayrollEntry, paid=False, month=self._current_month())
+
+        response = self.ceo_client.post('/api/hr/digest/generate/')
+        digest = response.json()['digest']
+        summary = digest['summary_line']
+
+        notification = Notification.objects.filter(
+            recipient=self.hr_manager,
+            title__icontains='Critical',
+        ).latest('created_at')
+
+        self.assertEqual(notification.body, summary)
+
+    def test_notification_includes_link_to_reports(self):
+        baker.make(PayrollEntry, paid=False, month=self._current_month())
+
+        response = self.ceo_client.post('/api/hr/digest/generate/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        notification = Notification.objects.filter(
+            recipient=self.hr_manager,
+            title__icontains='Critical',
+        ).latest('created_at')
+
+        self.assertIn('/reports', notification.link)
+        self.assertIn('HR', notification.link)
 
 
 class TestHrAttendanceEndpoint(HrEndpointsTestCase):
@@ -394,7 +445,9 @@ class TestHrUpcomingEventsEndpoint(HrEndpointsTestCase):
 class TestHrPayrollEndpoint(HrEndpointsTestCase):
     def test_get_payroll_month_returns_correct_net_calculation(self):
         month_date = timezone.datetime(2026, 4, 1).date()
-        employee = baker.make(User, role=User.Role.SALES, department=self.hr_department, first_name='Dana', last_name='Marin')
+        employee = baker.make(
+            User, role=User.Role.SALES, department=self.hr_department, first_name='Dana', last_name='Marin'
+        )
 
         baker.make(
             PayrollEntry,

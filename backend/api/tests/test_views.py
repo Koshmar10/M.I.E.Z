@@ -2,16 +2,18 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
-from django.test import TestCase, Client
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.db.models import Sum
+from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
 from model_bakery import baker
-from django.db.models import Sum
-from rest_framework.test import APITestCase
 from rest_framework import status
-from django.contrib.auth import get_user_model
-from django.conf import settings
-from ..models import User, Department, Ticket, Customer, Product, Order, OrderItem
+from rest_framework.test import APITestCase
+
+from ..models import Customer, Department, Order, OrderItem, Product, Ticket, User
+
 
 class IsEvenTests(TestCase):
     def setUp(self):
@@ -77,7 +79,7 @@ class AuthTests(APITestCase):
         self.logout_url = reverse('logout')
 
     def test_login_sets_cookies(self):
-        data = {"username": self.username, "password": self.password}
+        data = {'username': self.username, 'password': self.password}
         response = self.client.post(self.login_url, data, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -86,7 +88,7 @@ class AuthTests(APITestCase):
         self.assertTrue(response.cookies[settings.SIMPLE_JWT['AUTH_COOKIE']]['httponly'])
 
     def test_protected_route_access(self):
-        self.client.post(self.login_url, {"username": self.username, "password": self.password})
+        self.client.post(self.login_url, {'username': self.username, 'password': self.password})
         response = self.client.get(self.me_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
@@ -101,7 +103,7 @@ class AuthTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_logout_clears_cookies(self):
-        self.client.post(self.login_url, {"username": self.username, "password": self.password})
+        self.client.post(self.login_url, {'username': self.username, 'password': self.password})
 
         response = self.client.post(self.logout_url)
         access_cookie = response.cookies.get(settings.SIMPLE_JWT['AUTH_COOKIE'])
@@ -153,7 +155,7 @@ class ApiErrorSchemaTests(APITestCase):
     def test_unhandled_exception_returns_standard_500_schema(self):
         self.client.force_authenticate(user=self.ceo)
 
-        with patch('api.views.UserMeView.get', side_effect=Exception('boom')):
+        with patch('api.views.auth.UserMeView.get', side_effect=Exception('boom')):
             response = self.client.get('/api/auth/me/')
 
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -189,18 +191,18 @@ class ITDashboardTests(APITestCase):
         self.client.force_authenticate(user=self.ceo)
 
         # Create workload
-        Ticket.objects.create(ticket_number="T1", status=Ticket.Status.OPEN)
-        Ticket.objects.create(ticket_number="T2", status=Ticket.Status.OPEN, priority=Ticket.Priority.URGENT)
-        Ticket.objects.create(ticket_number="T3", status=Ticket.Status.IN_PROGRESS)
+        Ticket.objects.create(ticket_number='T1', status=Ticket.Status.OPEN)
+        Ticket.objects.create(ticket_number='T2', status=Ticket.Status.OPEN, priority=Ticket.Priority.URGENT)
+        Ticket.objects.create(ticket_number='T3', status=Ticket.Status.IN_PROGRESS)
 
         # Create resolved (SLA met: 2 hours)
-        t4 = Ticket.objects.create(ticket_number="T4", status=Ticket.Status.RESOLVED)
+        t4 = Ticket.objects.create(ticket_number='T4', status=Ticket.Status.RESOLVED)
         t4.created_at = self.now - timedelta(hours=2)
         t4.resolved_at = self.now
         t4.save()
 
         # Create resolved (SLA missed: 6 hours)
-        t5 = Ticket.objects.create(ticket_number="T5", status=Ticket.Status.RESOLVED)
+        t5 = Ticket.objects.create(ticket_number='T5', status=Ticket.Status.RESOLVED)
         t5.created_at = self.now - timedelta(hours=6)
         t5.resolved_at = self.now
         t5.save()
@@ -215,7 +217,7 @@ class ITDashboardTests(APITestCase):
 
     def test_model_auto_resolve_timestamp(self):
         """Test that out save() method handles resolved_at correctly"""
-        ticket = Ticket.objects.create(ticket_number="T99", status=Ticket.Status.OPEN)
+        ticket = Ticket.objects.create(ticket_number='T99', status=Ticket.Status.OPEN)
         self.assertIsNone(ticket.resolved_at)
 
         ticket.status = Ticket.Status.RESOLVED
@@ -292,8 +294,12 @@ class ITDashboardTests(APITestCase):
 class TicketListViewTests(APITestCase):
     def setUp(self):
         self.ceo = User.objects.create_user(username='ceo_tickets', role=User.Role.CEO, email='ceo_tickets@example.com')
-        self.it_user = User.objects.create_user(username='it_tickets', role=User.Role.IT, email='it_tickets@example.com')
-        self.sales_user = User.objects.create_user(username='sales_tickets', role=User.Role.SALES, email='sales_tickets@example.com')
+        self.it_user = User.objects.create_user(
+            username='it_tickets', role=User.Role.IT, email='it_tickets@example.com'
+        )
+        self.sales_user = User.objects.create_user(
+            username='sales_tickets', role=User.Role.SALES, email='sales_tickets@example.com'
+        )
 
         from ..models import Department
 
@@ -546,7 +552,9 @@ class TicketApiTests(APITestCase):
             status=Ticket.Status.OPEN,
         )
 
-        to_in_progress = self.client.patch(f'/api/tickets/{ticket.id}/', {'status': Ticket.Status.IN_PROGRESS}, format='json')
+        to_in_progress = self.client.patch(
+            f'/api/tickets/{ticket.id}/', {'status': Ticket.Status.IN_PROGRESS}, format='json'
+        )
         self.assertEqual(to_in_progress.status_code, 200)
         self.assertEqual(to_in_progress.data['status'], Ticket.Status.IN_PROGRESS)
         self.assertEqual(to_in_progress.data['assigned_to'], self.it_user.id)
@@ -892,8 +900,12 @@ class OrderListViewTests(APITestCase):
             channel=Order.Channel.DIRECT,
         )
 
-        OrderItem.objects.create(order=self.order_1, product=self.product_a, quantity=2, unit_price_ron=Decimal('30.00'))
-        OrderItem.objects.create(order=self.order_1, product=self.product_b, quantity=1, unit_price_ron=Decimal('60.50'))
+        OrderItem.objects.create(
+            order=self.order_1, product=self.product_a, quantity=2, unit_price_ron=Decimal('30.00')
+        )
+        OrderItem.objects.create(
+            order=self.order_1, product=self.product_b, quantity=1, unit_price_ron=Decimal('60.50')
+        )
 
     def test_order_number_is_auto_generated_with_hash_format(self):
         self.assertRegex(self.order_1.order_number, r'^#\d{4}$')
@@ -990,14 +1002,18 @@ class SalesDashboardKpiTests(APITestCase):
         self._create_order(amount='100.00', order_date=yesterday, status_value=Order.Status.DELIVERED)
 
         self._create_order(amount='15.00', order_date=week_return_date, status_value=Order.Status.CANCELLED)
-        self._create_order(amount='22.00', order_date=start_of_week - timedelta(days=1), status_value=Order.Status.CANCELLED)
+        self._create_order(
+            amount='22.00', order_date=start_of_week - timedelta(days=1), status_value=Order.Status.CANCELLED
+        )
 
         response = self.client.get('/api/sales/dashboard/')
 
         today_orders = Order.objects.filter(date=today).count()
         today_revenue = Order.objects.filter(date=today).aggregate(total=Sum('value_ron'))['total'] or Decimal('0')
         yesterday_orders = Order.objects.filter(date=yesterday).count()
-        yesterday_revenue = Order.objects.filter(date=yesterday).aggregate(total=Sum('value_ron'))['total'] or Decimal('0')
+        yesterday_revenue = Order.objects.filter(date=yesterday).aggregate(total=Sum('value_ron'))['total'] or Decimal(
+            '0'
+        )
         processing_orders = Order.objects.filter(status=Order.Status.PROCESSING).count()
         returns_week = Order.objects.filter(
             status=Order.Status.CANCELLED,
@@ -1129,7 +1145,6 @@ class SalesAnalyticsTask3Tests(APITestCase):
         self.assertEqual(top_response.status_code, status.HTTP_403_FORBIDDEN)
 
 
-from datetime import timedelta
 from api.models import Invoice
 
 
@@ -1193,13 +1208,17 @@ class InvoiceListViewTests(APITestCase):
     def test_order_creation_auto_creates_invoice_via_signal(self):
         self.client.force_authenticate(user=self.sales_user)
 
-        response = self.client.post('/api/orders/', {
-            'customer': self.customer.id,
-            'value_ron': '450.00',
-            'date': timezone.localdate().isoformat(),
-            'status': Order.Status.PROCESSING,
-            'channel': Order.Channel.WEBSITE,
-        }, format='json')
+        response = self.client.post(
+            '/api/orders/',
+            {
+                'customer': self.customer.id,
+                'value_ron': '450.00',
+                'date': timezone.localdate().isoformat(),
+                'status': Order.Status.PROCESSING,
+                'channel': Order.Channel.WEBSITE,
+            },
+            format='json',
+        )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         order = Order.objects.get(id=response.data['id'])
@@ -1211,15 +1230,32 @@ class InvoiceListViewTests(APITestCase):
 
 class CustomerListViewTests(APITestCase):
     def setUp(self):
-        self.sales_user = User.objects.create_user(username='sales_cust', role=User.Role.SALES, email='sales_cust@example.com')
+        self.sales_user = User.objects.create_user(
+            username='sales_cust', role=User.Role.SALES, email='sales_cust@example.com'
+        )
         self.hr_user = User.objects.create_user(username='hr_cust', role=User.Role.HR, email='hr_cust@example.com')
 
         self.customer_a = Customer.objects.create(name='Alpha Corp', tier=Customer.Tier.GOLD)
         self.customer_b = Customer.objects.create(name='Beta Ltd', tier=Customer.Tier.SILVER)
 
-        Order.objects.create(customer=self.customer_a, created_by=self.sales_user, value_ron=Decimal('500.00'), status=Order.Status.PROCESSING)
-        Order.objects.create(customer=self.customer_a, created_by=self.sales_user, value_ron=Decimal('300.00'), status=Order.Status.PROCESSING)
-        Order.objects.create(customer=self.customer_b, created_by=self.sales_user, value_ron=Decimal('100.00'), status=Order.Status.PROCESSING)
+        Order.objects.create(
+            customer=self.customer_a,
+            created_by=self.sales_user,
+            value_ron=Decimal('500.00'),
+            status=Order.Status.PROCESSING,
+        )
+        Order.objects.create(
+            customer=self.customer_a,
+            created_by=self.sales_user,
+            value_ron=Decimal('300.00'),
+            status=Order.Status.PROCESSING,
+        )
+        Order.objects.create(
+            customer=self.customer_b,
+            created_by=self.sales_user,
+            value_ron=Decimal('100.00'),
+            status=Order.Status.PROCESSING,
+        )
 
     def test_customer_list_returns_orders_count_and_tier(self):
         self.client.force_authenticate(user=self.sales_user)
@@ -1252,11 +1288,15 @@ class CustomerListViewTests(APITestCase):
 
 class CustomerDetailViewTests(APITestCase):
     def setUp(self):
-        self.sales_user = User.objects.create_user(username='sales_detail', role=User.Role.SALES, email='sales_detail@example.com')
+        self.sales_user = User.objects.create_user(
+            username='sales_detail', role=User.Role.SALES, email='sales_detail@example.com'
+        )
         self.hr_user = User.objects.create_user(username='hr_detail', role=User.Role.HR, email='hr_detail@example.com')
 
         self.customer = Customer.objects.create(name='Detail Corp', contact_name='Jane Doe', tier=Customer.Tier.BRONZE)
-        self.order = Order.objects.create(customer=self.customer, created_by=self.sales_user, value_ron=Decimal('250.00'), status=Order.Status.SHIPPED)
+        self.order = Order.objects.create(
+            customer=self.customer, created_by=self.sales_user, value_ron=Decimal('250.00'), status=Order.Status.SHIPPED
+        )
 
     def test_customer_detail_returns_order_history(self):
         self.client.force_authenticate(user=self.sales_user)

@@ -1,16 +1,23 @@
 import json
-from datetime import timedelta, date
+from datetime import timedelta
+from unittest.mock import patch
 
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
-from unittest.mock import patch
-
-from rest_framework.test import APIClient
 from model_bakery import baker
+from rest_framework.test import APIClient
 
 from api.models import (
-    User, Department, Attendance, Contract, PayrollEntry, Report, Notification, WorkflowLog, Workflow,
+    Attendance,
+    Contract,
+    Department,
+    Notification,
+    PayrollEntry,
+    Report,
+    User,
+    Workflow,
+    WorkflowLog,
 )
 
 
@@ -18,12 +25,15 @@ class HrAgentIntegrationTest(TestCase):
     @classmethod
     def setUpTestData(cls):
         # Departments
-        cls.depts = [baker.make(Department, name=n, slug=s) for n, s in (
-            ('Human Resources', 'hr'),
-            ('Sales', 'sales'),
-            ('IT', 'it'),
-            ('Inventory', 'inventory'),
-        )]
+        cls.depts = [
+            baker.make(Department, name=n, slug=s)
+            for n, s in (
+                ('Human Resources', 'hr'),
+                ('Sales', 'sales'),
+                ('IT', 'it'),
+                ('Inventory', 'inventory'),
+            )
+        ]
 
         # Users: CEO, HR manager, and 7 employees across departments
         cls.ceo = baker.make(User, role=User.Role.CEO, username='ceo_integ')
@@ -31,10 +41,18 @@ class HrAgentIntegrationTest(TestCase):
 
         cls.employees = []
         # 2 in Sales, 2 in IT, 2 in Inventory, 1 in HR
-        cls.employees += [baker.make(User, role=User.Role.SALES, department=cls.depts[1], is_active=True) for _ in range(2)]
-        cls.employees += [baker.make(User, role=User.Role.IT, department=cls.depts[2], is_active=True) for _ in range(2)]
-        cls.employees += [baker.make(User, role=User.Role.INVENTORY, department=cls.depts[3], is_active=True) for _ in range(2)]
-        cls.employees += [baker.make(User, role=User.Role.HR, department=cls.depts[0], is_active=True) for _ in range(1)]
+        cls.employees += [
+            baker.make(User, role=User.Role.SALES, department=cls.depts[1], is_active=True) for _ in range(2)
+        ]
+        cls.employees += [
+            baker.make(User, role=User.Role.IT, department=cls.depts[2], is_active=True) for _ in range(2)
+        ]
+        cls.employees += [
+            baker.make(User, role=User.Role.INVENTORY, department=cls.depts[3], is_active=True) for _ in range(2)
+        ]
+        cls.employees += [
+            baker.make(User, role=User.Role.HR, department=cls.depts[0], is_active=True) for _ in range(1)
+        ]
 
         # 4 weeks of attendance records for each employee
         today = timezone.localdate()
@@ -54,12 +72,30 @@ class HrAgentIntegrationTest(TestCase):
         # 2 expiring contracts
         expiring_emp1 = cls.employees[0]
         expiring_emp2 = cls.employees[1]
-        Contract.objects.create(employee=expiring_emp1, department=cls.depts[1], contract_number='EXP-1', start_date=today - timedelta(days=365), end_date=today + timedelta(days=10))
-        Contract.objects.create(employee=expiring_emp2, department=cls.depts[1], contract_number='EXP-2', start_date=today - timedelta(days=200), end_date=today + timedelta(days=20))
+        Contract.objects.create(
+            employee=expiring_emp1,
+            department=cls.depts[1],
+            contract_number='EXP-1',
+            start_date=today - timedelta(days=365),
+            end_date=today + timedelta(days=10),
+        )
+        Contract.objects.create(
+            employee=expiring_emp2,
+            department=cls.depts[1],
+            contract_number='EXP-2',
+            start_date=today - timedelta(days=200),
+            end_date=today + timedelta(days=20),
+        )
 
         # 1 payroll anomaly - unpaid entry in current month
         month_start = timezone.now().date().replace(day=1)
-        PayrollEntry.objects.create(employee=cls.employees[2], month=month_start, gross_salary_ron='3000.00', net_salary_ron='2700.00', paid=False)
+        PayrollEntry.objects.create(
+            employee=cls.employees[2],
+            month=month_start,
+            gross_salary_ron='3000.00',
+            net_salary_ron='2700.00',
+            paid=False,
+        )
 
         # Ensure Workflow exists
         Workflow.objects.create(name='HR Insights Agent', is_active=True, actions=['GENERATE_REPORT'])
@@ -126,64 +162,53 @@ class HrAgentIntegrationTest(TestCase):
     @patch('api.management.commands.run_hr_agent.AgentRunner.run')
     def test_management_command_run_hr_agent_dry_run_no_notification(self, mocked_run):
         Notification.objects.all().delete()
-        digest = {
-            'critical': [{'title': 'Test'}],
-            'warning': [],
-            'summary_line': 'test'
-        }
+        digest = {'critical': [{'title': 'Test'}], 'warning': [], 'summary_line': 'test'}
         mocked_run.return_value = {'response': json.dumps(digest), 'tool_calls_made': []}
-        
+
         call_command('run_hr_agent', dry_run=True)
-        
+
         notifications = Notification.objects.filter(recipient=self.hr_manager)
         self.assertFalse(notifications.exists())
-        
+
         log = WorkflowLog.objects.order_by('-triggered_at').first()
         self.assertTrue(log.success)
 
     @patch('api.management.commands.run_hr_agent.AgentRunner.run')
     def test_run_hr_agent_zero_insights_no_notification_sent(self, mocked_run):
         Notification.objects.all().delete()
-        digest = {
-            'critical': [],
-            'warning': [],
-            'summary_line': 'No issues detected'
-        }
+        digest = {'critical': [], 'warning': [], 'summary_line': 'No issues detected'}
         mocked_run.return_value = {'response': json.dumps(digest), 'tool_calls_made': []}
-        
+
         call_command('run_hr_agent')
-        
+
         notifications = Notification.objects.filter(recipient=self.hr_manager)
         self.assertFalse(notifications.exists())
 
     @patch('api.management.commands.run_hr_agent.AgentRunner.run')
     def test_run_hr_agent_critical_insight_creates_notification_type_warning(self, mocked_run):
         Notification.objects.all().delete()
-        digest = {
-            'critical': [{'title': 'CRITICAL!'}],
-            'warning': [],
-            'summary_line': 'Has critical'
-        }
+        digest = {'critical': [{'title': 'CRITICAL!'}], 'warning': [], 'summary_line': 'Has critical'}
         mocked_run.return_value = {'response': json.dumps(digest), 'tool_calls_made': []}
-        
+
         call_command('run_hr_agent')
-        
+
         notifications = Notification.objects.filter(recipient=self.hr_manager)
         self.assertTrue(notifications.exists())
         self.assertEqual(notifications.first().type, 'WARNING')
 
     def test_post_run_insights_agent_non_hr_role_forbidden(self):
-        non_hr = self.employees[0] # SALES
+        non_hr = self.employees[0]  # SALES
         self.client.force_authenticate(user=non_hr)
         resp = self.client.post('/api/hr/run-insights-agent/')
         self.assertEqual(resp.status_code, 403)
 
-    @patch('api.views.RunInsightsAgentView._spawn_agent')
+    @patch('api.views.hr.RunInsightsAgentView._spawn_agent')
     def test_post_run_insights_agent_rate_limit_enforced(self, mock_spawn):
         # _spawn_agent is mocked so the endpoint doesn't launch real background
         # threads that would run the agent and lock the shared SQLite test DB.
         self.client.force_authenticate(user=self.hr_manager)
         from django.core.cache import cache
+
         cache.clear()
 
         for _ in range(3):

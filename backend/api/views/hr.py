@@ -101,11 +101,6 @@ class CeoHrSummaryView(APIView):
             to_date__gte=today,
         )
 
-        leave_by_department = {
-            row['department_id']: row['count']
-            for row in (current_leaves.values('department_id').annotate(count=Count('id')))
-        }
-
         department_headcount = []
         departments = Department.objects.order_by('name')
         for department in departments:
@@ -233,6 +228,7 @@ class HrUpcomingEventsView(APIView):
         )
         for contract in upcoming_contracts:
             event_date = contract.end_date
+            assert event_date is not None  # filtered by end_date__isnull=False
             days_until = self._days_until(today, event_date)
             employee_name = (
                 f'{contract.employee.first_name} {contract.employee.last_name}'.strip() or contract.employee.username

@@ -320,17 +320,11 @@ class TicketListCreateView(ListCreateAPIView):
             assigned_count = base_qs.count()
             resolved_count = base_qs.filter(status=Ticket.Status.RESOLVED).count()
 
-            # attach a technician summary to the response payload
-            try:
-                # response.data is a dict-like from DRF
-                response.data['technician_summary'] = {
-                    'in_progress_count': in_progress_count,
-                    'assigned_count': assigned_count,
-                    'resolved_count': resolved_count,
-                }
-            except Exception:
-                # best-effort: if response.data isn't mutable, skip
-                pass
+            response.data['technician_summary'] = {
+                'in_progress_count': in_progress_count,
+                'assigned_count': assigned_count,
+                'resolved_count': resolved_count,
+            }
 
         return response
 

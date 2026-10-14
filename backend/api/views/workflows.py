@@ -64,14 +64,14 @@ class WorkflowTriggersView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response([{'value': v, 'label': l} for v, l in Workflow.TriggerType.choices])
+        return Response([{'value': value, 'label': label} for value, label in Workflow.TriggerType.choices])
 
 
 class WorkflowActionsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response([{'value': v, 'label': l} for v, l in Workflow.ActionType.choices])
+        return Response([{'value': value, 'label': label} for value, label in Workflow.ActionType.choices])
 
 
 class WorkflowLogListView(APIView):

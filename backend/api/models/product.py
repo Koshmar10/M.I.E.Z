@@ -17,6 +17,9 @@ class Product(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self) -> str:
+        return f'{self.name} ({self.sku})'
+
     @property
     def availability(self):
         stock = int(self.stock_count or 0)
@@ -25,6 +28,3 @@ class Product(models.Model):
         if stock < int(self.min_stock or 0):
             return 'Low Stock'
         return 'In Stock'
-
-    def __str__(self) -> str:
-        return f'{self.name} ({self.sku})'

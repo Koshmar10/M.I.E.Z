@@ -531,8 +531,8 @@ def query_inventory(
             'in_stock': 'in stock',
         }
         normalized_status = status_map.get(status_name, status_name)
-        products = [product for product in products if product.availability.lower() == normalized_status]
-        return [_serialize_inventory(product) for product in products[: _normalized_limit(limit)]]
+        matching = [product for product in products if product.availability.lower() == normalized_status]
+        return [_serialize_inventory(product) for product in matching[: _normalized_limit(limit)]]
 
     return [_serialize_inventory(product) for product in products[: _normalized_limit(limit)]]
 
@@ -883,19 +883,19 @@ def get_leave_patterns(
         bucket['employee_name'] = employee_name
         bucket['occurrences'] += 1
 
-    for bucket in monday_friday_counts.values():
-        if bucket['occurrences'] >= 3:
-            observations.append(
-                {
-                    'pattern_type': 'monday_friday_leave_requests',
-                    'employee_name': bucket['employee_name'],
-                    'description': (
-                        f'Observation: {bucket["employee_name"]} submitted leave requests starting on Monday or Friday '
-                        f'{bucket["occurrences"]} times in the last {total_weeks} weeks.'
-                    ),
-                    'occurrences': bucket['occurrences'],
-                }
-            )
+    observations.extend(
+        {
+            'pattern_type': 'monday_friday_leave_requests',
+            'employee_name': bucket['employee_name'],
+            'description': (
+                f'Observation: {bucket["employee_name"]} submitted leave requests starting on Monday or Friday '
+                f'{bucket["occurrences"]} times in the last {total_weeks} weeks.'
+            ),
+            'occurrences': bucket['occurrences'],
+        }
+        for bucket in monday_friday_counts.values()
+        if bucket['occurrences'] >= 3
+    )
 
     medical_rows = list(
         queryset.filter(type=LeaveRequest.Type.SICK)
@@ -939,12 +939,12 @@ def get_leave_patterns(
                 }
             )
 
-    for employee_id, employee_requests in _group_leave_requests_by_employee(queryset).items():
+    for employee_requests in _group_leave_requests_by_employee(queryset).values():
         previous_rejected = False
         consecutive_after_rejection = 0
         employee_name = employee_requests[0]['employee_name'] if employee_requests else ''
 
-        for request in employee_requests:
+        for leave in employee_requests:
             if previous_rejected:
                 consecutive_after_rejection += 1
                 observations.append(
@@ -953,12 +953,12 @@ def get_leave_patterns(
                         'employee_name': employee_name,
                         'description': (
                             f'Observation: {employee_name} submitted a new leave request after a rejected request on '
-                            f'{request["created_at"].date().isoformat()}.'
+                            f'{leave["created_at"].date().isoformat()}.'
                         ),
                         'occurrences': consecutive_after_rejection,
                     }
                 )
-            previous_rejected = request['status'] == LeaveRequest.Status.REJECTED
+            previous_rejected = leave['status'] == LeaveRequest.Status.REJECTED
 
     observations.sort(
         key=lambda item: (item['pattern_type'], item.get('employee_name') or item.get('department') or '')
@@ -984,7 +984,7 @@ def get_headcount_vs_workload(user: User) -> list[dict[str, Any]]:
             return 'warning'
         return 'ok'
 
-    departments = [
+    departments: list[dict[str, Any]] = [
         {
             'department': 'Sales',
             'active_headcount': User.objects.filter(role=User.Role.SALES, is_active=True).count(),

@@ -36,6 +36,20 @@ class Ticket(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
 
+    def __str__(self) -> str:
+        return f'{self.ticket_number} {self.title}'
+
+    def save(self, *args, **kwargs):
+        if not self.ticket_number:
+            self.ticket_number = self._generate_ticket_number()
+
+        if self.status == self.Status.RESOLVED and self.resolved_at is None:
+            from django.utils import timezone
+
+            self.resolved_at = timezone.now()
+
+        super().save(*args, **kwargs)
+
     @classmethod
     def _generate_ticket_number(cls):
         max_number = 0
@@ -48,14 +62,3 @@ class Ticket(models.Model):
                 max_number = max(max_number, int(numeric_part))
 
         return f'TKT-{(max_number + 1):05d}'
-
-    def save(self, *args, **kwargs):
-        if not self.ticket_number:
-            self.ticket_number = self._generate_ticket_number()
-
-        if self.status == self.Status.RESOLVED and self.resolved_at is None:
-            from django.utils import timezone
-
-            self.resolved_at = timezone.now()
-
-        super().save(*args, **kwargs)

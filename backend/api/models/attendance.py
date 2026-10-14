@@ -21,3 +21,6 @@ class Attendance(models.Model):
     class Meta:
         unique_together = [('employee', 'date')]
         ordering = ['-date']
+
+    def __str__(self) -> str:
+        return f'{self.date} {self.status} (employee {self.employee_id})'

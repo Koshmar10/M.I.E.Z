@@ -12,3 +12,6 @@ class OrderItem(models.Model):
 
     class Meta:
         unique_together = [('order', 'product')]
+
+    def __str__(self) -> str:
+        return f'{self.quantity} × product {self.product_id} (order {self.order_id})'

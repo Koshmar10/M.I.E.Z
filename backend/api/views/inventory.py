@@ -43,8 +43,8 @@ class InventoryFlowView(APIView):
             end_date = timezone.now()
             start_date = end_date - timedelta(days=days)
 
-        nodes = []
-        node_map = {}
+        nodes: list[dict[str, str]] = []
+        node_map: dict[tuple[str, str], int] = {}
 
         def get_node(type_, name_):
             key = (type_, name_)
@@ -57,8 +57,8 @@ class InventoryFlowView(APIView):
 
         from collections import defaultdict
 
-        inbound_agg = defaultdict(int)
-        outbound_agg = defaultdict(int)
+        inbound_agg: defaultdict[tuple[str, str], int] = defaultdict(int)
+        outbound_agg: defaultdict[tuple[str, str], int] = defaultdict(int)
 
         for m in movements:
             val = int(m.quantity or 0)
@@ -155,18 +155,11 @@ class InventoryProductsView(APIView):
                 qs = qs.filter(status_query)
 
         # Only paginate if 'page' is requested
-        if 'page' in request.query_params:
-            paginator = StandardPagination()
-            page = paginator.paginate_queryset(qs, request)
-            iterable = page
-            is_paginated = True
-        else:
-            iterable = qs
-            is_paginated = False
-            paginator = None
+        paginator = StandardPagination() if 'page' in request.query_params else None
+        page = paginator.paginate_queryset(qs, request) if paginator else None
 
         products = []
-        for p in iterable:
+        for p in qs if page is None else page:
             stock = int(p.stock_count or 0)
             minimum = int(p.min_stock or 0)
 
@@ -191,7 +184,7 @@ class InventoryProductsView(APIView):
                 }
             )
 
-        if is_paginated:
+        if paginator:
             return paginator.get_paginated_response(products)
         return Response(products, status=status.HTTP_200_OK)
 
@@ -241,10 +234,7 @@ class StockMovementCreateView(APIView):
 
         product = request.query_params.get('product')
         if product:
-            if product.isdigit():
-                qs = qs.filter(product_id=int(product))
-            else:
-                qs = qs.filter(product__sku=product)
+            qs = qs.filter(product_id=int(product)) if product.isdigit() else qs.filter(product__sku=product)
 
         date_from = request.query_params.get('date_from')
         date_to = request.query_params.get('date_to')

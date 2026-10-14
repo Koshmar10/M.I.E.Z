@@ -16,3 +16,6 @@ class Notification(models.Model):
     is_read = models.BooleanField(default=False)
     link = models.CharField(max_length=255, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return self.title

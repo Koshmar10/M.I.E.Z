@@ -124,14 +124,9 @@ class EmployeeStatsView(APIView):
 
         department_rows = base.values('department__name').annotate(count=Count('id')).order_by('department__name')
 
-        departments = []
-        for row in department_rows:
-            departments.append(
-                {
-                    'name': row['department__name'] or 'Unassigned',
-                    'count': row['count'],
-                }
-            )
+        departments = [
+            {'name': row['department__name'] or 'Unassigned', 'count': row['count']} for row in department_rows
+        ]
 
         return Response(
             {

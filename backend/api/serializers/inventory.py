@@ -70,9 +70,8 @@ class StockMovementSerializer(serializers.ModelSerializer):
         quantity = data.get('quantity', 0)
         notes = data.get('notes', '').strip()
 
-        if movement_type in [StockMovement.Type.ADJUSTMENT, StockMovement.Type.WRITE_OFF]:
-            if not notes:
-                raise serializers.ValidationError({'notes': 'Notes are required for adjustments and write-offs.'})
+        if movement_type in [StockMovement.Type.ADJUSTMENT, StockMovement.Type.WRITE_OFF] and not notes:
+            raise serializers.ValidationError({'notes': 'Notes are required for adjustments and write-offs.'})
 
         if movement_type == StockMovement.Type.ADJUSTMENT:
             if quantity < 0:

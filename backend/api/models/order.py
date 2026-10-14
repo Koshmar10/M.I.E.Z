@@ -29,6 +29,9 @@ class Order(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self) -> str:
+        return self.order_number
+
     def save(self, *args, **kwargs):
         if not self.order_number:
             last_order_number = (
@@ -47,6 +50,3 @@ class Order(models.Model):
             self.order_number = f'#{next_number:04d}'
 
         super().save(*args, **kwargs)
-
-    def __str__(self) -> str:
-        return self.order_number

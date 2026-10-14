@@ -32,6 +32,9 @@ class StockMovement(models.Model):
     class Meta:
         ordering = ['-created_at']
 
+    def __str__(self) -> str:
+        return f'{self.movement_type} {self.quantity} × product {self.product_id}'
+
     def save(self, *args, **kwargs):
         # A new movement and its effect on the product's stock are saved together, or not at all.
         is_create = self.pk is None

@@ -9,3 +9,6 @@ class WorkflowLog(models.Model):
     trigger_type = models.CharField(max_length=64, blank=True, default='')
     actions_log = models.JSONField(default=list, blank=True)
     success = models.BooleanField(default=True)
+
+    def __str__(self) -> str:
+        return f'Workflow {self.workflow_id} run at {self.triggered_at} ({"ok" if self.success else "failed"})'

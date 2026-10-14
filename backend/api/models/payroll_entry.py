@@ -13,3 +13,6 @@ class PayrollEntry(models.Model):
 
     class Meta:
         unique_together = [('employee', 'month')]
+
+    def __str__(self) -> str:
+        return f'Payroll {self.month} (employee {self.employee_id})'

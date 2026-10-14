@@ -9,3 +9,6 @@ class TicketComment(models.Model):
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='ticket_comments')
     body = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f'Comment on ticket {self.ticket_id} by user {self.author_id}'

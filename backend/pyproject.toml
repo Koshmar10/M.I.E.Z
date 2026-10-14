@@ -61,8 +61,9 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 enable_error_code = ["ignore-without-code"]
 
+# Third-party packages that ship no type information.
 [[tool.mypy.overrides]]
-module = ["django_crontab.*"]
+module = ["django_crontab.*", "django_filters.*"]
 ignore_missing_imports = true
 
 # Tests are verified by running them; only their annotated functions are type-checked.

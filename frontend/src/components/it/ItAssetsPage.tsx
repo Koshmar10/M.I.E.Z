@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FiPlus, FiRefreshCw, FiSearch, FiX } from 'react-icons/fi'
+import { api, errorMessage, type Page } from '../../api/client'
 
 type AssetCategory = 'LAPTOP' | 'MONITOR' | 'PHONE' | 'PERIPHERAL' | 'OTHER'
 type AssetStatus = 'AVAILABLE' | 'ASSIGNED' | 'MAINTENANCE' | 'RETIRED'
@@ -34,8 +35,6 @@ type AssetFormState = {
   notes: string
 }
 
-type AssetListResponse = AssetRow[] | { results?: AssetRow[] }
-type EmployeeListResponse = EmployeeOption[] | { results?: EmployeeOption[] }
 
 const categoryLabels: Record<AssetCategory, string> = {
   LAPTOP: 'Laptop',
@@ -200,13 +199,7 @@ export default function ItAssetsPage() {
       setLoading(true)
       setError('')
 
-      const response = await fetch('/api/it/assets/', { credentials: 'include' })
-      if (!response.ok) {
-        throw new Error(`Assets request failed with status ${response.status}`)
-      }
-
-      const data = (await response.json()) as AssetListResponse
-      setAssets(Array.isArray(data) ? data : Array.isArray(data.results) ? data.results : [])
+      setAssets(await api.get<AssetRow[]>('/api/it/assets/'))
     } catch (err) {
       console.error('Failed to load assets:', err)
       setError('Could not load assets right now.')
@@ -218,13 +211,8 @@ export default function ItAssetsPage() {
   const loadEmployees = async () => {
     try {
       setEmployeeError('')
-      const response = await fetch('/api/employees/?page_size=100', { credentials: 'include' })
-      if (!response.ok) {
-        throw new Error(`Employees request failed with status ${response.status}`)
-      }
-
-      const data = (await response.json()) as EmployeeListResponse
-      setEmployees(Array.isArray(data) ? data : Array.isArray(data.results) ? data.results : [])
+      const data = await api.get<Page<EmployeeOption>>('/api/employees/', { page_size: 100 })
+      setEmployees(data.results)
     } catch (err) {
       console.error('Failed to load employees:', err)
       setEmployeeError('Could not load employees for assignment.')
@@ -281,25 +269,16 @@ export default function ItAssetsPage() {
     try {
       setSavingCreate(true)
 
-      const response = await fetch('/api/it/assets/', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...createForm,
-          assigned_to: createForm.assigned_to ? Number(createForm.assigned_to) : null,
-        }),
+      await api.post('/api/it/assets/', {
+        ...createForm,
+        assigned_to: createForm.assigned_to ? Number(createForm.assigned_to) : null,
       })
-
-      if (!response.ok) {
-        throw new Error(`Create failed with status ${response.status}`)
-      }
 
       await loadAssets()
       closeCreate()
     } catch (err) {
       console.error('Failed to create asset:', err)
-      setError('Could not create asset right now.')
+      setError(errorMessage(err, 'Could not create asset right now.'))
     } finally {
       setSavingCreate(false)
     }
@@ -312,21 +291,10 @@ export default function ItAssetsPage() {
       setSavingEdit(true)
       setDeleteError('')
 
-      const response = await fetch(`/api/it/assets/${selectedAsset.id}/`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...editForm,
-          assigned_to: editForm.assigned_to ? Number(editForm.assigned_to) : null,
-        }),
+      const updated = await api.patch<AssetRow>(`/api/it/assets/${selectedAsset.id}/`, {
+        ...editForm,
+        assigned_to: editForm.assigned_to ? Number(editForm.assigned_to) : null,
       })
-
-      if (!response.ok) {
-        throw new Error(`Update failed with status ${response.status}`)
-      }
-
-      const updated = (await response.json()) as AssetRow
       setAssets((current) => current.map((asset) => (asset.id === updated.id ? updated : asset)))
       setSelectedAsset(updated)
       setEditForm({
@@ -339,7 +307,7 @@ export default function ItAssetsPage() {
       })
     } catch (err) {
       console.error('Failed to update asset:', err)
-      setDeleteError('Could not save asset changes.')
+      setDeleteError(errorMessage(err, 'Could not save asset changes.'))
     } finally {
       setSavingEdit(false)
     }
@@ -354,15 +322,7 @@ export default function ItAssetsPage() {
 
     try {
       setSavingEdit(true)
-      const response = await fetch(`/api/it/assets/${selectedAsset.id}/`, {
-        method: 'DELETE',
-        credentials: 'include',
-      })
-
-      if (!response.ok && response.status !== 204) {
-        throw new Error(`Delete failed with status ${response.status}`)
-      }
-
+      await api.delete(`/api/it/assets/${selectedAsset.id}/`)
       setAssets((current) => current.filter((asset) => asset.id !== selectedAsset.id))
       closeAsset()
     } catch (err) {

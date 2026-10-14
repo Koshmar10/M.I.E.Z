@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { api, errorMessage } from '../../api/client'
 
 interface CreateTicketFormData {
   title: string
@@ -54,40 +55,18 @@ const CreateTicketPage = () => {
         return
       }
 
-      const response = await fetch('/api/tickets/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          title: formData.title.trim(),
-          description: formData.description.trim(),
-          category: formData.category.trim(),
-          priority: formData.priority,
-          location: formData.location.trim(),
-          requested_for: formData.requested_for || null,
-          department: formData.department || null,
-        }),
+      const ticket = await api.post<{ ticket_number: string }>('/api/tickets/', {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        category: formData.category.trim(),
+        priority: formData.priority,
+        location: formData.location.trim(),
+        requested_for: formData.requested_for || null,
+        department: formData.department || null,
       })
-
-      if (!response.ok) {
-        const data = await response.json()
-        const errorMsg =
-          data.field_errors &&
-          Object.entries(data.field_errors)
-            .map(([key, msgs]: [string, any]) => `${key}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
-            .join('; ')
-
-        setError(errorMsg || 'Failed to create ticket. Please try again.')
-        setIsSubmitting(false)
-        return
-      }
-
-      const ticket = await response.json()
-      navigate(`/it/tickets`, { state: { ticketCreated: ticket.ticket_number } })
+      void navigate(`/it/tickets`, { state: { ticketCreated: ticket.ticket_number } })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred while creating the ticket.')
+      setError(errorMessage(err, 'Failed to create ticket. Please try again.'))
       setIsSubmitting(false)
     }
   }

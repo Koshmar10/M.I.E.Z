@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { FiTruck, FiPackage, FiSearch, FiPlus, FiCheckCircle } from 'react-icons/fi'
+import { api, type Page } from '../../api/client'
 
 type Movement = {
   id: number
@@ -37,46 +38,38 @@ export default function ReceiveStockPage() {
   const fetchDeliveries = async () => {
     setLoadingDeliveries(true)
     try {
-      const res = await fetch('/api/inventory/stock-movements/?type=INBOUND', { credentials: 'include' })
-      if (res.ok) {
-        const data = await res.json()
-        setRecentDeliveries(data.results ?? data)
-      }
-    } catch { }
+      const data = await api.get<Page<Movement>>('/api/inventory/stock-movements/', { type: 'INBOUND' })
+      setRecentDeliveries(data.results)
+    } catch {
+      // keep the list as it was
+    }
     finally { setLoadingDeliveries(false) }
   }
 
   useEffect(() => {
     fetchDeliveries()
-    fetch('/api/inventory/products/', { credentials: 'include' })
-      .then(r => r.json()).then(d => setProducts(d.results ?? d)).catch(() => {})
-    fetch('/api/inventory/suppliers/', { credentials: 'include' })
-      .then(r => r.json()).then(d => setSuppliers(d)).catch(() => {})
+    api.get<Product[]>('/api/inventory/products/').then(setProducts).catch(() => undefined)
+    api.get<Array<{ id: number; name: string }>>('/api/inventory/suppliers/').then(setSuppliers).catch(() => undefined)
   }, [])
 
   const handleSubmit = async () => {
     if (!form.product || !form.supplier || !form.qty || Number(form.qty) <= 0) return
     setIsSubmitting(true)
     try {
-      const resp = await fetch('/api/inventory/stock-movements/', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product: Number(form.product),
-          movement_type: 'INBOUND',
-          quantity: Number(form.qty),
-          supplier: Number(form.supplier),
-          expected_date: form.expected_date || null,
-          notes: form.notes,
-        }),
+      await api.post('/api/inventory/stock-movements/', {
+        product: Number(form.product),
+        movement_type: 'INBOUND',
+        quantity: Number(form.qty),
+        supplier: Number(form.supplier),
+        expected_date: form.expected_date || null,
+        notes: form.notes,
       })
-      if (resp.ok) {
-        setSubmitted(true)
-        setShowForm(false)
-        fetchDeliveries()
-      }
-    } catch { }
+      setSubmitted(true)
+      setShowForm(false)
+      void fetchDeliveries()
+    } catch {
+      // the form stays open so the user can try again
+    }
     finally { setIsSubmitting(false) }
   }
 

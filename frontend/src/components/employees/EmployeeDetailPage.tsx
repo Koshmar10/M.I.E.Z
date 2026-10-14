@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { api, fieldErrors } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
 type Department = {
@@ -55,19 +56,6 @@ const createEditFormData = (employee: Employee): EmployeeEditFormData => ({
   is_active: employee.is_active,
 })
 
-const normalizeErrors = (data: unknown) => {
-  if (!data || typeof data !== 'object') {
-    return { non_field_errors: ['Could not save employee. Please try again.'] }
-  }
-
-  const record = data as Record<string, unknown>
-  if ('field_errors' in record && record.field_errors && typeof record.field_errors === 'object') {
-    return record.field_errors as Record<string, string[]>
-  }
-
-  return record as Record<string, string[]>
-}
-
 const EmployeeDetailPage = () => {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -100,16 +88,7 @@ const EmployeeDetailPage = () => {
         setIsLoading(true)
         setError('')
 
-        const response = await fetch(`/api/employees/${id}/`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load employee detail: ${response.status}`)
-        }
-
-        const data = (await response.json()) as Employee
-        setEmployee(data)
+        setEmployee(await api.get<Employee>(`/api/employees/${id}/`))
       } catch (fetchError) {
         console.error('Failed to load employee detail', fetchError)
         setError('Could not load employee details right now.')
@@ -124,16 +103,7 @@ const EmployeeDetailPage = () => {
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
-        const response = await fetch('/api/departments/', {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load departments: ${response.status}`)
-        }
-
-        const data = (await response.json()) as Department[]
-        setDepartments(data)
+        setDepartments(await api.get<Department[]>('/api/departments/'))
       } catch (fetchError) {
         console.error('Failed to load departments', fetchError)
         setDepartments([])
@@ -191,32 +161,13 @@ const EmployeeDetailPage = () => {
         is_active: editFormData.is_active,
       }
 
-      const response = await fetch(`/api/employees/${id}/`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (response.status === 400) {
-        const data = await response.json()
-        setEditErrors(normalizeErrors(data))
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(`Failed to update employee: ${response.status}`)
-      }
-
-      const updatedEmployee = (await response.json()) as Employee
+      const updatedEmployee = await api.patch<Employee>(`/api/employees/${id}/`, payload)
       setEmployee(updatedEmployee)
       setEditFormData(createEditFormData(updatedEmployee))
       setIsEditing(false)
     } catch (saveError) {
       console.error('Failed to update employee', saveError)
-      setEditErrors({ non_field_errors: ['Could not save employee. Please try again.'] })
+      setEditErrors(fieldErrors(saveError) ?? { non_field_errors: ['Could not save employee. Please try again.'] })
     } finally {
       setIsSaving(false)
     }

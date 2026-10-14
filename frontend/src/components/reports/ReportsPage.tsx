@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FiClock, FiDownload, FiEye, FiFileText, FiPrinter, FiRefreshCw, FiX } from 'react-icons/fi'
+import { api, ApiError, errorMessage } from '../../api/client'
 
 interface Report {
   id: number
@@ -10,6 +11,16 @@ interface Report {
   file_size_kb: number
   generated_at: string | null
   file_available: boolean
+}
+
+/** Save a generated report to the user's computer. Throws if the file isn't available. */
+async function saveReportFile(report: Pick<Report, 'id' | 'slug'>) {
+  const url = URL.createObjectURL(await api.blob(`/api/reports/${report.id}/download/`))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${report.slug}.html`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 const CATEGORIES = ['All', 'Sales', 'Finance', 'Inventory', 'HR', 'IT']
@@ -62,23 +73,12 @@ function GenerateModal({
     setState('loading')
     setAgentResponse('')
     try {
-      const res = await fetch(`/api/reports/generate/${slug}/`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directives }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setAgentResponse(data.detail ?? 'Generation failed.')
-        setState('error')
-        return
-      }
+      const data = await api.post<{ response?: string }>(`/api/reports/generate/${slug}/`, { directives })
       setAgentResponse(data.response ?? '')
       setState('done')
       onSuccess()
-    } catch {
-      setAgentResponse('An unexpected error occurred.')
+    } catch (err) {
+      setAgentResponse(err instanceof ApiError ? errorMessage(err, 'Generation failed.') : 'An unexpected error occurred.')
       setState('error')
     }
   }
@@ -170,8 +170,7 @@ function ReportViewerModal({ report, onClose }: { report: Report; onClose: () =>
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
-    fetch(`/api/reports/${report.id}/view/`, { credentials: 'include' })
-      .then(r => r.json())
+    api.get<{ html?: string }>(`/api/reports/${report.id}/view/`)
       .then(data => {
         if (data.html) setHtml(data.html)
         else setError('Report content unavailable.')
@@ -180,16 +179,8 @@ function ReportViewerModal({ report, onClose }: { report: Report; onClose: () =>
       .finally(() => setLoading(false))
   }, [report.id])
 
-  const handleDownload = async () => {
-    const res = await fetch(`/api/reports/${report.id}/download/`, { credentials: 'include' })
-    if (!res.ok) return
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${report.slug}.html`
-    a.click()
-    URL.revokeObjectURL(url)
+  const handleDownload = () => {
+    saveReportFile(report).catch(() => undefined)
   }
 
   const handlePrint = () => {
@@ -265,9 +256,9 @@ export default function ReportsPage() {
   const fetchReports = () => {
     setLoading(true)
     const params = activeCategory !== 'All' ? `?category=${activeCategory}` : ''
-    fetch(`/api/reports/${params}`, { credentials: 'include' })
-      .then(r => r.json())
-      .then(data => setReports(Array.isArray(data) ? data : []))
+    api.get<Report[]>(`/api/reports/${params}`)
+      .then(setReports)
+      .catch(() => setReports([]))
       .finally(() => setLoading(false))
   }
 
@@ -277,15 +268,9 @@ export default function ReportsPage() {
     if (!report.file_available || downloading === report.id) return
     setDownloading(report.id)
     try {
-      const res = await fetch(`/api/reports/${report.id}/download/`, { credentials: 'include' })
-      if (!res.ok) { alert('File not available yet. Generate the report first.'); return }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${report.slug}.html`
-      a.click()
-      URL.revokeObjectURL(url)
+      await saveReportFile(report)
+    } catch {
+      alert('File not available yet. Generate the report first.')
     } finally {
       setDownloading(null)
     }

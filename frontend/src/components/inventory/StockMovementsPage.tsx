@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FiArrowDownLeft, FiArrowUpRight, FiRefreshCw, FiTrash2, FiBox, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import { useNavigate } from 'react-router-dom'
+import { api, type Page } from '../../api/client'
 
 type Movement = {
   id: number
@@ -48,11 +49,9 @@ export default function StockMovementsPage() {
       if (dateFrom) params.set('date_from', dateFrom)
       if (dateTo) params.set('date_to', dateTo)
 
-      const res = await fetch(`/api/inventory/stock-movements/?${params}`, { credentials: 'include' })
-      if (!res.ok) { setMovements([]); setCount(0); return }
-      const data = await res.json()
-      setMovements(data.results ?? data)
-      setCount(data.count ?? 0)
+      const data = await api.get<Page<Movement>>(`/api/inventory/stock-movements/?${params.toString()}`)
+      setMovements(data.results)
+      setCount(data.count)
     } catch {
       setMovements([]); setCount(0)
     } finally {

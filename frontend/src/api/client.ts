@@ -13,7 +13,16 @@
 export type ApiErrorBody = {
   detail?: string
   code?: string
-  field_errors?: Record<string, string[]>
+  field_errors?: Record<string, unknown>
+}
+
+/** A page of a paginated list endpoint. */
+export type Page<T> = {
+  count: number
+  total_count?: number
+  next: string | null
+  previous: string | null
+  results: T[]
 }
 
 export class ApiError extends Error {
@@ -26,6 +35,24 @@ export class ApiError extends Error {
     this.status = status
     this.body = body
   }
+}
+
+/** Readable text for a failed request: the per-field validation errors if any, else the server's message. */
+export function errorMessage(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
+  if (!(error instanceof ApiError)) return error instanceof Error ? error.message : fallback
+  const fields = Object.entries(error.body.field_errors ?? {})
+  if (fields.length > 0) {
+    return fields
+      .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : String(messages)}`)
+      .join('; ')
+  }
+  return error.body.detail ?? fallback
+}
+
+/** The per-field validation errors of a 400 response (for showing next to form fields), else null. */
+export function fieldErrors(error: unknown): Record<string, string[]> | null {
+  if (!(error instanceof ApiError) || error.status !== 400) return null
+  return (error.body.field_errors ?? {}) as Record<string, string[]>
 }
 
 export const UNAUTHORIZED_EVENT = 'miez:unauthorized'

@@ -14,6 +14,7 @@ import {
   FiZap,
   FiBarChart2,
 } from 'react-icons/fi'
+import { api } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
 const SIDEBAR_COLLAPSED_KEY = 'miez.sidebar.collapsed'
@@ -117,13 +118,7 @@ const AppSidebar = () => {
       }
 
       try {
-        const response = await fetch('/api/departments/', { credentials: 'include' })
-        if (!response.ok) {
-          setDepartments([])
-          return
-        }
-        const data = await response.json()
-        if (Array.isArray(data)) setDepartments(data)
+        setDepartments(await api.get<Department[]>('/api/departments/'))
       } catch {
         setDepartments([])
       }
@@ -150,12 +145,11 @@ const AppSidebar = () => {
     if (user?.role === 'INVENTORY' || user?.role === 'CEO') {
       const fetchAlerts = async () => {
         try {
-          const res = await fetch('/api/inventory/products/?status=LOW&status=OUT', { credentials: 'include' })
-          if (res.ok) {
-            const data = await res.json()
-            setLowStockCount(data.length)
-          }
-        } catch (err) { }
+          const lowStock = await api.get<unknown[]>('/api/inventory/products/?status=LOW&status=OUT')
+          setLowStockCount(lowStock.length)
+        } catch {
+          // the badge is optional; leave it as it was
+        }
       }
       fetchAlerts()
     }

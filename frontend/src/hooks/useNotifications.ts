@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+
+import { api } from '../api/client'
 
 export type AppNotification = {
   id: number
@@ -16,41 +18,29 @@ type NotificationsResponse = {
   results: AppNotification[]
 }
 
+const QUERY_KEY = ['notifications']
+
+/** The current user's latest 20 notifications, refreshed every minute. */
 export function useNotifications() {
-  const [notifications, setNotifications] = useState<AppNotification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
+  const queryClient = useQueryClient()
+  const { data } = useQuery({
+    queryKey: QUERY_KEY,
+    queryFn: () => api.get<NotificationsResponse>('/api/notifications/', { page_size: 20 }),
+    refetchInterval: 60_000,
+  })
+  const refresh = () => queryClient.invalidateQueries({ queryKey: QUERY_KEY })
 
-  const fetch_ = useCallback(async () => {
-    try {
-      const res = await fetch('/api/notifications/?page_size=20', { credentials: 'include' })
-      if (!res.ok) return
-      const data: NotificationsResponse = await res.json()
-      setNotifications(data.results ?? [])
-      setUnreadCount(data.unread_count ?? 0)
-    } catch { }
-  }, [])
+  const markRead = useMutation({ mutationFn: (id: number) => api.patch(`/api/notifications/${id}/`), onSuccess: refresh })
+  const markAllRead = useMutation({ mutationFn: () => api.post('/api/notifications/mark-all-read/'), onSuccess: refresh })
 
-  useEffect(() => {
-    fetch_()
-    const interval = setInterval(fetch_, 60_000)
-    return () => clearInterval(interval)
-  }, [fetch_])
-
-  const markRead = useCallback(async (id: number) => {
-    try {
-      await fetch(`/api/notifications/${id}/`, { method: 'PATCH', credentials: 'include' })
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n))
-      setUnreadCount(prev => Math.max(0, prev - 1))
-    } catch { }
-  }, [])
-
-  const markAllRead = useCallback(async () => {
-    try {
-      await fetch('/api/notifications/mark-all-read/', { method: 'POST', credentials: 'include' })
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
-      setUnreadCount(0)
-    } catch { }
-  }, [])
-
-  return { notifications, unreadCount, markRead, markAllRead, refresh: fetch_ }
+  return {
+    notifications: data?.results ?? [],
+    unreadCount: data?.unread_count ?? 0,
+    markRead: (id: number) => {
+      markRead.mutate(id)
+    },
+    markAllRead: () => {
+      markAllRead.mutate()
+    },
+  }
 }

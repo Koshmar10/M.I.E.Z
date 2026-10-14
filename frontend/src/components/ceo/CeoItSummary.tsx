@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { api } from '../../api/client'
 
 type ItStatsResponse = {
   open_ticket: number
@@ -38,16 +39,10 @@ const CeoItSummary = () => {
         setLoading(true)
         setError('')
 
-        const [statsRes, trendRes] = await Promise.all([
-          fetch('/api/it/dashboard/', { credentials: 'include' }),
-          fetch('/api/it/ticket-trend/', { credentials: 'include' }),
+        const [statsData, trendData] = await Promise.all([
+          api.get<ItStatsResponse>('/api/it/dashboard/'),
+          api.get<{ weeks?: TicketTrendWeek[] }>('/api/it/ticket-trend/'),
         ])
-
-        if (!statsRes.ok) throw new Error(`IT stats failed: ${statsRes.status}`)
-        if (!trendRes.ok) throw new Error(`IT trend failed: ${trendRes.status}`)
-
-        const statsData = (await statsRes.json()) as ItStatsResponse
-        const trendData = (await trendRes.json()) as { weeks?: TicketTrendWeek[] }
 
         setStats(statsData)
         setTrend(Array.isArray(trendData.weeks) ? trendData.weeks : [])

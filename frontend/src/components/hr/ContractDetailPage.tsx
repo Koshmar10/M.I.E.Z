@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FiArrowLeft, FiEdit2, FiX } from 'react-icons/fi'
 import { useNavigate, useParams } from 'react-router-dom'
+import { api, errorMessage } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
 type ContractStatus = 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'PENDING'
@@ -92,25 +93,16 @@ function EditContractModal({
     setError('')
     setSaving(true)
     try {
-      const response = await fetch(`/api/contracts/${contract.id}/`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: form.type,
-          start_date: form.start_date,
-          end_date: form.end_date || null,
-          salary_ron: form.salary_ron,
-          department: form.department === '' ? null : Number(form.department),
-        }),
+      const data = await api.patch<ContractDetail>(`/api/contracts/${contract.id}/`, {
+        type: form.type,
+        start_date: form.start_date,
+        end_date: form.end_date || null,
+        salary_ron: form.salary_ron,
+        department: form.department === '' ? null : Number(form.department),
       })
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.detail || 'Failed to save contract.')
-      }
-      onSaved(data as ContractDetail)
+      onSaved(data)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to save contract.')
+      setError(errorMessage(e, 'Failed to save contract.'))
     } finally {
       setSaving(false)
     }
@@ -219,16 +211,7 @@ export default function ContractDetailPage() {
         setLoading(true)
         setError('')
 
-        const response = await fetch(`/api/contracts/${id}/`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load contract detail: ${response.status}`)
-        }
-
-        const data = (await response.json()) as ContractDetail
-        setContract(data)
+        setContract(await api.get<ContractDetail>(`/api/contracts/${id}/`))
       } catch (fetchError) {
         console.error('Failed to load contract detail', fetchError)
         setError('Could not load contract details right now.')
@@ -244,11 +227,7 @@ export default function ContractDetailPage() {
     if (!canEdit) return
     const loadDepartments = async () => {
       try {
-        const response = await fetch('/api/departments/', { credentials: 'include' })
-        if (response.ok) {
-          const data = (await response.json()) as DepartmentOption[]
-          setDepartments(data)
-        }
+        setDepartments(await api.get<DepartmentOption[]>('/api/departments/'))
       } catch (err) {
         console.error('Failed to load departments', err)
       }

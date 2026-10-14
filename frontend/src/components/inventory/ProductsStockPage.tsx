@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FiSearch, FiPackage, FiCheckCircle, FiAlertTriangle, FiXCircle, FiX, FiActivity, FiDollarSign } from 'react-icons/fi'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
+import { api } from '../../api/client'
 
 interface Product {
   id: number
@@ -148,10 +149,10 @@ export default function ProductsStockPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
 
   useEffect(() => {
-    fetch('/api/inventory/products/', { credentials: 'include' })
-      .then(r => r.json())
-      .then(d => setProducts(d.results ?? d))
-      .catch(() => {})
+    api
+      .get<Product[]>('/api/inventory/products/')
+      .then(setProducts)
+      .catch(() => undefined)
       .finally(() => setLoading(false))
   }, [])
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { api } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
 interface SystemStatus {
@@ -28,20 +29,7 @@ const SystemStatusPanel: React.FC<SystemStatusPanelProps> = ({
   useEffect(() => {
     const fetchSystemStatus = async () => {
       try {
-        const response = await fetch('/api/it/system-status/', {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch system status: ${response.statusText}`)
-        }
-
-        const data: SystemStatus[] = await response.json()
-        setSystems(data)
+        setSystems(await api.get<SystemStatus[]>('/api/it/system-status/'))
         setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error occurred')

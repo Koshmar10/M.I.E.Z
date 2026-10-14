@@ -7,6 +7,11 @@ export type CurrentUser = {
   username: string
   email: string
   role: Role
+  first_name: string
+  last_name: string
+  phone: string
+  address: string
+  department_name: string | null
 }
 
 export const authApi = {

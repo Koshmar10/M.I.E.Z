@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api, type Page } from "../../api/client";
 import { FiX, FiPackage, FiBox, FiAlertTriangle, FiXCircle, FiTruck, FiRepeat, FiCheck, FiSearch, FiFilter, FiArrowRight } from "react-icons/fi";
 
 // --- API DATA TYPES ---
@@ -282,10 +283,9 @@ export default function InventoryDashboard() {
   const [page, setPage] = useState(1);
 
   useEffect(() => {
-    fetch('/api/inventory/dashboard/', { credentials: 'include' })
-      .then(r => { if (r.ok) return r.json(); throw new Error() })
-      .then(data => setKpis(data))
-      .catch(() => { })
+    api.get<DashboardKpis>('/api/inventory/dashboard/')
+      .then(setKpis)
+      .catch(() => undefined)
       .finally(() => setLoading(false))
   }, []);
 
@@ -297,19 +297,10 @@ export default function InventoryDashboard() {
     if (statusFilter !== 'All') params.append('status', statusFilter);
     params.append('page', page.toString());
 
-    fetch(`/api/inventory/products/?${params.toString()}`, { credentials: 'include' })
-      .then(r => r.json())
+    api.get<Page<ApiProduct>>(`/api/inventory/products/?${params.toString()}`)
       .then(data => {
-        if (data && data.results && Array.isArray(data.results)) {
-          setProducts(data.results);
-          setTotalProducts(data.count ?? 0);
-        } else if (Array.isArray(data)) {
-          setProducts(data);
-          setTotalProducts(data.length);
-        } else {
-          setProducts([]);
-          setTotalProducts(0);
-        }
+        setProducts(data.results);
+        setTotalProducts(data.count);
       })
       .catch(() => {
         setProducts([]);
@@ -319,10 +310,9 @@ export default function InventoryDashboard() {
   }, [search, category, statusFilter, page]);
 
   useEffect(() => {
-    fetch('/api/inventory/flow/?days=7', { credentials: 'include' })
-      .then(r => r.json())
-      .then(data => setFlowData(data))
-      .catch(() => { })
+    api.get<FlowData>('/api/inventory/flow/', { days: 7 })
+      .then(setFlowData)
+      .catch(() => undefined)
   }, []);
 
   return (

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FiCheck, FiClock, FiX } from 'react-icons/fi'
+import { api } from '../../api/client'
 
 type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 type LeaveType = 'VACATION' | 'SICK' | 'UNPAID'
@@ -74,12 +75,7 @@ export default function LeaveRequestsPage() {
     const loadRequests = async () => {
       setLoading(true)
       try {
-        const response = await fetch('/api/leave-requests/', { credentials: 'include' })
-        if (!response.ok) {
-          throw new Error(`Failed to load leave requests: ${response.status}`)
-        }
-
-        const data = (await response.json()) as LeaveRequest[]
+        const data = await api.get<LeaveRequest[]>('/api/leave-requests/')
         setRequests(Array.isArray(data) ? data : [])
       } catch (error) {
         console.error('Failed to load leave requests', error)
@@ -116,20 +112,7 @@ export default function LeaveRequestsPage() {
 
     setUpdatingId(id)
     try {
-      const response = await fetch(`/api/leave-requests/${id}/${nextStatus}/`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to ${nextStatus} request: ${response.status}`)
-      }
-
-      const payload = (await response.json()) as { id: number; status: LeaveStatus }
+      const payload = await api.patch<{ id: number; status: LeaveStatus }>(`/api/leave-requests/${id}/${nextStatus}/`, {})
 
       setRequests(current =>
         current.map(request =>

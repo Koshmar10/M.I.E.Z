@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { FiShoppingCart, FiDollarSign, FiClock, FiRotateCcw, FiList, FiPackage } from 'react-icons/fi'
+import { api } from '../../api/client'
 
 type OrderRow = {
   id: number
@@ -173,16 +174,7 @@ const SalesDashboard = () => {
         setLoadingKpis(true)
         setKpisError('')
 
-        const response = await fetch('/api/sales/dashboard/', {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Sales KPI request failed with status ${response.status}`)
-        }
-
-        const data = (await response.json()) as SalesKpiResponse
-        setKpis(data)
+        setKpis(await api.get<SalesKpiResponse>('/api/sales/dashboard/'))
       } catch (error) {
         console.error('Failed to load sales KPIs:', error)
         setKpisError('Could not load KPI cards right now.')
@@ -201,14 +193,14 @@ const SalesDashboard = () => {
         setAnalyticsError('')
 
         const [dailyResult, topProductsResult] = await Promise.allSettled([
-          fetch('/api/sales/daily-orders/', { credentials: 'include' }),
-          fetch('/api/sales/top-products/', { credentials: 'include' }),
+          api.get<DailyOrdersResponse>('/api/sales/daily-orders/'),
+          api.get<TopProductsResponse>('/api/sales/top-products/'),
         ])
 
         let dailyLoaded = false
 
-        if (dailyResult.status === 'fulfilled' && dailyResult.value.ok) {
-          const dailyData = (await dailyResult.value.json()) as DailyOrdersResponse
+        if (dailyResult.status === 'fulfilled') {
+          const dailyData = dailyResult.value
           const normalizedDays = Array.isArray(dailyData.days) ? [...dailyData.days] : []
           normalizedDays.sort((a, b) => a.date.localeCompare(b.date))
           setDailyOrders(normalizedDays)
@@ -217,8 +209,8 @@ const SalesDashboard = () => {
           setDailyOrders([])
         }
 
-        if (topProductsResult.status === 'fulfilled' && topProductsResult.value.ok) {
-          const topData = (await topProductsResult.value.json()) as TopProductsResponse
+        if (topProductsResult.status === 'fulfilled') {
+          const topData = topProductsResult.value
           setTopProducts(Array.isArray(topData.products) ? topData.products : [])
           setAnalyticsWeek({ week_start: topData.week_start, week_end: topData.week_end })
         } else {
@@ -260,15 +252,7 @@ const SalesDashboard = () => {
           params.set('channel', channelFilter)
         }
 
-        const response = await fetch(`/api/orders/?${params.toString()}`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Orders request failed with status ${response.status}`)
-        }
-
-        const data = (await response.json()) as OrderListResponse
+        const data = await api.get<OrderListResponse>(`/api/orders/?${params.toString()}`)
         setOrders(Array.isArray(data.results) ? data.results : [])
         setTotalCount(data.total_count ?? 0)
         setTotalRonSum(data.total_ron_sum ?? '0')
@@ -291,16 +275,7 @@ const SalesDashboard = () => {
       setDetailError('')
       setSelectedOrder(null)
 
-      const response = await fetch(`/api/orders/${orderId}/`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Order detail request failed with status ${response.status}`)
-      }
-
-      const detail = (await response.json()) as OrderDetail
-      setSelectedOrder(detail)
+      setSelectedOrder(await api.get<OrderDetail>(`/api/orders/${orderId}/`))
     } catch (error) {
       console.error('Failed to load order detail:', error)
       setDetailError('Could not load order details.')

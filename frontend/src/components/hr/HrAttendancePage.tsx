@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi'
+import { api } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
 type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'REMOTE' | 'LEAVE' | null
@@ -94,9 +95,7 @@ const HrAttendancePage = () => {
         setIsLoading(true)
         setError('')
         const weekParam = selectedWeekStart.toISOString().slice(0, 10)
-        const res = await fetch(`/api/attendance/?week=${weekParam}`, { credentials: 'include' })
-        if (!res.ok) throw new Error(`${res.status}`)
-        setData((await res.json()) as AttendanceResponse)
+        setData(await api.get<AttendanceResponse>('/api/attendance/', { week: weekParam }))
       } catch {
         setError('Could not load attendance data.')
         setData(null)

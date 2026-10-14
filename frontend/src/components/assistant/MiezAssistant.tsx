@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api, ApiError, errorMessage } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
 import Markdown from "../common/Markdown";
 
@@ -93,8 +94,9 @@ const MiezAssistant = () => {
   const fetchSessions = useCallback(async () => {
     setLoadingSessions(true);
     try {
-      const res = await fetch("/api/assistant/sessions/", { credentials: "include" });
-      if (res.ok) setSessions(await res.json());
+      setSessions(await api.get<SessionSummary[]>("/api/assistant/sessions/"));
+    } catch {
+      // keep the list as it was
     } finally {
       setLoadingSessions(false);
     }
@@ -103,21 +105,13 @@ const MiezAssistant = () => {
   const loadSession = useCallback(async (id: number) => {
     setRestoring(true);
     try {
-      const res = await fetch(`/api/assistant/sessions/${id}/`, { credentials: "include" });
-      if (!res.ok) {
-        if (user) localStorage.removeItem(SESSION_KEY(user.id));
-        return false;
-      }
-      const data = await res.json();
+      const data = await api.get<{ id: number; messages: Message[] }>(`/api/assistant/sessions/${id}/`);
       setSessionId(data.id);
-      setMessages(
-        (data.messages as { role: "user" | "assistant"; content: string }[]).map((m) => ({
-          role: m.role,
-          content: m.content,
-        }))
-      );
+      setMessages(data.messages.map((m) => ({ role: m.role, content: m.content })));
       return true;
-    } catch {
+    } catch (err) {
+      // a session that no longer exists shouldn't be reopened next time
+      if (err instanceof ApiError && user) localStorage.removeItem(SESSION_KEY(user.id));
       return false;
     } finally {
       setRestoring(false);
@@ -186,30 +180,19 @@ const MiezAssistant = () => {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/assistant/chat/", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: trimmed,
-          current_page: window.location.pathname,
-          ...(sessionId ? { session_id: sessionId } : {}),
-        }),
+      const data = await api.post<{ response: string; session_id?: number }>("/api/assistant/chat/", {
+        message: trimmed,
+        current_page: window.location.pathname,
+        ...(sessionId ? { session_id: sessionId } : {}),
       });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        if (!sessionId && data.session_id) {
-          setSessionId(data.session_id);
-          localStorage.setItem(SESSION_KEY(user.id), String(data.session_id));
-        }
-        setMessages((prev) => [...prev, { role: "assistant", content: data.response as string }]);
-      } else {
-        setMessages((prev) => [...prev, { role: "assistant", content: data.detail ?? "Something went wrong." }]);
+      if (!sessionId && data.session_id) {
+        setSessionId(data.session_id);
+        localStorage.setItem(SESSION_KEY(user.id), String(data.session_id));
       }
-    } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Could not reach the assistant." }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: data.response }]);
+    } catch (err) {
+      const content = err instanceof ApiError ? errorMessage(err, "Something went wrong.") : "Could not reach the assistant.";
+      setMessages((prev) => [...prev, { role: "assistant", content }]);
     } finally {
       setLoading(false);
     }
@@ -217,7 +200,7 @@ const MiezAssistant = () => {
 
   const deleteSession = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
-    await fetch(`/api/assistant/sessions/${id}/`, { method: "DELETE", credentials: "include" });
+    await api.delete(`/api/assistant/sessions/${id}/`);
     if (user && localStorage.getItem(SESSION_KEY(user.id)) === String(id)) {
       localStorage.removeItem(SESSION_KEY(user.id));
     }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { api, fieldErrors } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
 type Department = {
@@ -123,15 +124,7 @@ const EmployeesPage = () => {
         params.set('search', debouncedSearch)
       }
 
-      const response = await fetch(`/api/employees/?${params.toString()}`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to load employees: ${response.status}`)
-      }
-
-      const data = (await response.json()) as PaginatedEmployees
+      const data = await api.get<PaginatedEmployees>(`/api/employees/?${params.toString()}`)
       setEmployees(data.results)
       setTotal(data.count)
     } catch (error) {
@@ -159,16 +152,7 @@ const EmployeesPage = () => {
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
-        const response = await fetch('/api/departments/', {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load departments: ${response.status}`)
-        }
-
-        const data = (await response.json()) as Department[]
-        setDepartments(data)
+        setDepartments(await api.get<Department[]>('/api/departments/'))
       } catch (error) {
         console.error('Failed to load departments', error)
         setDepartments([])
@@ -205,25 +189,7 @@ const EmployeesPage = () => {
         salary_ron: parseFloat(formData.salary_ron),
       }
 
-      const response = await fetch('/api/employees/', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (response.status === 400) {
-        const data = await response.json()
-        const normalizedErrors = (data?.field_errors as Record<string, string[]>) || data || {}
-        setFormErrors(normalizedErrors)
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(`Failed to create employee: ${response.status}`)
-      }
+      await api.post('/api/employees/', payload)
 
       setFormData(initialFormData)
       setIsFormOpen(false)
@@ -231,7 +197,7 @@ const EmployeesPage = () => {
       await fetchEmployees()
     } catch (error) {
       console.error('Failed to create employee', error)
-      setFormErrors({ non_field_errors: ['Could not create employee. Please try again.'] })
+      setFormErrors(fieldErrors(error) ?? { non_field_errors: ['Could not create employee. Please try again.'] })
     } finally {
       setIsSubmitting(false)
     }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { api, errorMessage } from '../../api/client'
 
 type OrderRow = {
   id: number
@@ -158,15 +159,7 @@ const SalesOrdersPage = () => {
           params.set('channel', channelFilter)
         }
 
-        const response = await fetch(`/api/orders/?${params.toString()}`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Orders request failed with status ${response.status}`)
-        }
-
-        const data = (await response.json()) as OrderListResponse
+        const data = await api.get<OrderListResponse>(`/api/orders/?${params.toString()}`)
         setOrders(Array.isArray(data.results) ? data.results : [])
         setTotalCount(data.total_count ?? 0)
         setTotalRonSum(data.total_ron_sum ?? '0')
@@ -190,15 +183,7 @@ const SalesOrdersPage = () => {
       setStatusError('')
       setSelectedOrder(null)
 
-      const response = await fetch(`/api/orders/${orderId}/`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Order detail request failed with status ${response.status}`)
-      }
-
-      const detail = (await response.json()) as OrderDetail
+      const detail = await api.get<OrderDetail>(`/api/orders/${orderId}/`)
       setSelectedOrder(detail)
       setStatusDraft(detail.status || '')
       setIsEditingStatus(false)
@@ -244,21 +229,7 @@ const SalesOrdersPage = () => {
       setStatusSaving(true)
       setStatusError('')
 
-      const response = await fetch(`/api/orders/${selectedOrder.id}/`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ status: statusDraft }),
-      })
-
-      if (!response.ok) {
-        const message = await response.text()
-        throw new Error(message || `Status update failed with ${response.status}`)
-      }
-
-      const updated = (await response.json()) as OrderDetail
+      const updated = await api.patch<OrderDetail>(`/api/orders/${selectedOrder.id}/`, { status: statusDraft })
       setSelectedOrder(updated)
       setStatusDraft(updated.status || '')
       setIsEditingStatus(false)
@@ -267,7 +238,7 @@ const SalesOrdersPage = () => {
       )
     } catch (error) {
       console.error('Failed to update order status:', error)
-      setStatusError('Could not update the order status.')
+      setStatusError(errorMessage(error, 'Could not update the order status.'))
     } finally {
       setStatusSaving(false)
     }

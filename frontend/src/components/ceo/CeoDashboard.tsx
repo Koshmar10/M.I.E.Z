@@ -14,6 +14,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { useAuth } from '../../context/AuthContext'
 import UpcomingEventsWidget from '../hr/UpcomingEventsWidget'
 import CeoItSummary from './CeoItSummary'
+import { api } from '../../api/client'
 import CeoSalesSummary from './CeoSalesSummary'
 import CeoInventorySummary from './CeoInventorySummary'
 
@@ -70,15 +71,7 @@ const CeoDashboard = () => {
       }
 
       try {
-        const response = await fetch('/api/departments/', {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load departments: ${response.status}`)
-        }
-
-        const data = (await response.json()) as Department[]
+        const data = await api.get<Department[]>('/api/departments/')
         setDepartments(data)
         window.dispatchEvent(new CustomEvent('departments-updated', { detail: data }))
       } catch (error) {
@@ -103,16 +96,7 @@ const CeoDashboard = () => {
         setHrSummaryLoading(true)
         setHrSummaryError('')
 
-        const response = await fetch('/api/hr/ceo-summary/', {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load CEO HR summary: ${response.status}`)
-        }
-
-        const data = (await response.json()) as CeoHrSummaryResponse
-        setHrSummary(data)
+        setHrSummary(await api.get<CeoHrSummaryResponse>('/api/hr/ceo-summary/'))
       } catch (error) {
         console.error('Eroare la incarcarea HR summary pentru CEO', error)
         setHrSummaryError('Could not load HR summary data right now.')
@@ -140,15 +124,7 @@ const CeoDashboard = () => {
 
   const handleDelete = async (id: number) => {
     try {
-      const response = await fetch(`/api/departments/${id}/`, {
-        method: 'DELETE',
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to delete department: ${response.status}`)
-      }
-
+      await api.delete(`/api/departments/${id}/`)
       setDepartments(current => {
         const next = current.filter(dep => dep.id !== id)
         window.dispatchEvent(new CustomEvent('departments-updated', { detail: next }))
@@ -181,20 +157,7 @@ const CeoDashboard = () => {
     }
 
     try {
-      const response = await fetch('/api/departments/', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to create department: ${response.status}`)
-      }
-
-      const createdDepartment = (await response.json()) as Department
+      const createdDepartment = await api.post<Department>('/api/departments/', payload)
 
       setDepartments(current => {
         const next = [...current, createdDepartment].sort((a, b) => a.name.localeCompare(b.name))

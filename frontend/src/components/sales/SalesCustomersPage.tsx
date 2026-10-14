@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { api } from '../../api/client'
 import {
   BarChart,
   Bar,
@@ -100,15 +101,7 @@ const SalesCustomersPage = () => {
         params.set('page', String(page))
         params.set('page_size', '10')
 
-        const response = await fetch(`/api/customers/?${params.toString()}`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Customers request failed with status ${response.status}`)
-        }
-
-        const data = (await response.json()) as CustomerListResponse
+        const data = await api.get<CustomerListResponse>(`/api/customers/?${params.toString()}`)
         setCustomers(Array.isArray(data.results) ? data.results : [])
         setTotalCount(data.count ?? 0)
         setNextPageUrl(data.next ?? null)
@@ -139,16 +132,7 @@ const SalesCustomersPage = () => {
       setDetailError('')
       setSelectedCustomer(null)
 
-      const response = await fetch(`/api/customers/${customerId}/`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Customer detail request failed with status ${response.status}`)
-      }
-
-      const detail = (await response.json()) as CustomerDetail
-      setSelectedCustomer(detail)
+      setSelectedCustomer(await api.get<CustomerDetail>(`/api/customers/${customerId}/`))
     } catch (err) {
       console.error('Failed to load customer detail:', err)
       setDetailError('Could not load customer details.')

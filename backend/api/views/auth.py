@@ -24,6 +24,11 @@ def _current_user(user):
         'username': user.username,
         'email': user.email,
         'role': user.role,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'phone': user.phone,
+        'address': user.address,
+        'department_name': user.department.name if user.department else None,
         'message': 'Authenticated',
     }
 

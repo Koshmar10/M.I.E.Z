@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FiClock } from 'react-icons/fi'
+import { api } from '../../api/client'
 
 type UpcomingEventType = 'CONTRACT_EXPIRY' | 'ONBOARDING' | 'PAYROLL_PROCESSING'
 
@@ -52,13 +53,8 @@ export default function UpcomingEventsWidget() {
     const loadEvents = async () => {
       setLoading(true)
       try {
-        const response = await fetch('/api/hr/upcoming-events/?days=30', { credentials: 'include' })
-        if (!response.ok) {
-          throw new Error(`Failed to load upcoming events: ${response.status}`)
-        }
-
-        const data = (await response.json()) as UpcomingEventsResponse
-        setEvents(Array.isArray(data?.events) ? data.events : [])
+        const data = await api.get<UpcomingEventsResponse>('/api/hr/upcoming-events/', { days: 30 })
+        setEvents(data.events)
       } catch (error) {
         console.error('Failed to load upcoming events', error)
         setEvents([])
@@ -67,7 +63,7 @@ export default function UpcomingEventsWidget() {
       }
     }
 
-    loadEvents()
+    void loadEvents()
   }, [])
 
   const visibleEvents = useMemo(() => events.slice(0, 8), [events])

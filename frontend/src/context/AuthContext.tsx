@@ -1,93 +1,70 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { loginUser } from '../api/auth';
+import { useQueryClient } from '@tanstack/react-query'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
+import { authApi, type CurrentUser } from '../api/auth'
+import { UNAUTHORIZED_EVENT } from '../api/client'
 
-//Shared state for all application regarding auth related data
+// Who is logged in, shared by the whole app. The login itself is a Django session cookie.
 
-interface User {
-  id: number;
-  username: string;
-  email: string;
-  role: string;
+type AuthContextType = {
+  user: CurrentUser | null
+  isAuthenticated: boolean
+  isLoading: boolean
+  login: (username: string, password: string) => Promise<void>
+  logout: () => Promise<void>
 }
 
-interface AuthContextType {
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  user: User | null;
-  logout: () => void;
-  login: (username: string, password: string) => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
+  const queryClient = useQueryClient()
+  const [user, setUser] = useState<CurrentUser | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const response = await fetch('/api/auth/me/', {
-          credentials: 'include',
-        });
+    authApi
+      .me()
+      .then(setUser)
+      .catch(() => {
+        setUser(null)
+      })
+      .finally(() => {
+        setIsLoading(false)
+      })
+  }, [])
 
-        if (!response.ok) {
-          setIsAuthenticated(false);
-          setUser(null);
-          return;
-        }
+  // Any request that comes back 401 means the session is gone: forget the user and their cached data.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setUser(null)
+      queryClient.clear()
+    }
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+    return () => {
+      window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+    }
+  }, [queryClient])
 
-        const data = await response.json();
-        setIsAuthenticated(true);
-        setUser({
-          id: data.id,
-          username: data.username,
-          email: data.email,
-          role: data.role,
-        });
-
-      } catch (error) {
-        console.error('Auth check failed:', error);
-        setIsAuthenticated(false);
-        setUser(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, []);
+  const login = async (username: string, password: string) => {
+    setUser(await authApi.login(username, password))
+  }
 
   const logout = async () => {
-    try {
-      await fetch('/api/auth/logout/', {
-        method: 'POST',
-        credentials: 'include',
-      });
-    } catch (error) {
-      console.error('Logout failed:', error);
-    } finally {
-      setIsAuthenticated(false);
-      setUser(null);
-    }
-  };
-  const login = async (username: string, password: string) => {
-    const data = await loginUser(username, password); // ← calls API service
-    setUser(data.user);
-    setIsAuthenticated(true);
-  };
+    await authApi.logout().catch(() => undefined)
+    setUser(null)
+    queryClient.clear()
+  }
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, user, logout, login }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: user !== null, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
-  );
+  )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- the hook belongs next to its provider; editing this file just reloads the page
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
+  const context = useContext(AuthContext)
+  if (!context) throw new Error('useAuth must be used within AuthProvider')
+  return context
 }

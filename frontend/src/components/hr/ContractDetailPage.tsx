@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FiArrowLeft, FiEdit2, FiX } from 'react-icons/fi'
 import { useNavigate, useParams } from 'react-router-dom'
+import { api, errorMessage } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
 type ContractStatus = 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'PENDING'
@@ -92,25 +93,16 @@ function EditContractModal({
     setError('')
     setSaving(true)
     try {
-      const response = await fetch(`/api/contracts/${contract.id}/`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: form.type,
-          start_date: form.start_date,
-          end_date: form.end_date || null,
-          salary_ron: form.salary_ron,
-          department: form.department === '' ? null : Number(form.department),
-        }),
+      const data = await api.patch<ContractDetail>(`/api/contracts/${contract.id}/`, {
+        type: form.type,
+        start_date: form.start_date,
+        end_date: form.end_date || null,
+        salary_ron: form.salary_ron,
+        department: form.department === '' ? null : Number(form.department),
       })
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.detail || 'Failed to save contract.')
-      }
-      onSaved(data as ContractDetail)
+      onSaved(data)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to save contract.')
+      setError(errorMessage(e, 'Failed to save contract.'))
     } finally {
       setSaving(false)
     }
@@ -183,7 +175,7 @@ function EditContractModal({
             Cancel
           </button>
           <button
-            onClick={save}
+            onClick={() => void save()}
             disabled={saving}
             className="rounded-lg bg-[#D1353B] px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
@@ -219,16 +211,7 @@ export default function ContractDetailPage() {
         setLoading(true)
         setError('')
 
-        const response = await fetch(`/api/contracts/${id}/`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load contract detail: ${response.status}`)
-        }
-
-        const data = (await response.json()) as ContractDetail
-        setContract(data)
+        setContract(await api.get<ContractDetail>(`/api/contracts/${id}/`))
       } catch (fetchError) {
         console.error('Failed to load contract detail', fetchError)
         setError('Could not load contract details right now.')
@@ -237,23 +220,19 @@ export default function ContractDetailPage() {
       }
     }
 
-    loadContract()
+    void loadContract()
   }, [id])
 
   useEffect(() => {
     if (!canEdit) return
     const loadDepartments = async () => {
       try {
-        const response = await fetch('/api/departments/', { credentials: 'include' })
-        if (response.ok) {
-          const data = (await response.json()) as DepartmentOption[]
-          setDepartments(data)
-        }
+        setDepartments(await api.get<DepartmentOption[]>('/api/departments/'))
       } catch (err) {
         console.error('Failed to load departments', err)
       }
     }
-    loadDepartments()
+    void loadDepartments()
   }, [canEdit])
 
   const statusClass = useMemo(() => {
@@ -261,7 +240,7 @@ export default function ContractDetailPage() {
       return STATUS_STYLES.PENDING
     }
 
-    return STATUS_STYLES[contract.status] ?? STATUS_STYLES.PENDING
+    return STATUS_STYLES[contract.status]
   }, [contract])
 
   if (loading) {
@@ -273,7 +252,7 @@ export default function ContractDetailPage() {
       <section className="flex flex-col gap-4">
         <button
           type="button"
-          onClick={() => navigate('/hr/contracts')}
+          onClick={() => void navigate('/hr/contracts')}
           className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-[var(--foreground)] shadow-sm transition-colors hover:border-[#D1353B] hover:text-[#D1353B]"
         >
           <FiArrowLeft className="h-4 w-4" />
@@ -292,7 +271,7 @@ export default function ContractDetailPage() {
     <section className="flex flex-col gap-4">
       <button
         type="button"
-        onClick={() => navigate('/hr/contracts')}
+        onClick={() => void navigate('/hr/contracts')}
         className="inline-flex w-fit items-center gap-2 rounded-full border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium text-[var(--foreground)] shadow-sm transition-colors hover:border-[#D1353B] hover:text-[#D1353B]"
       >
         <FiArrowLeft className="h-4 w-4" />
@@ -309,7 +288,7 @@ export default function ContractDetailPage() {
 
           <div className="flex items-center gap-3">
             <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusClass}`}>
-              {STATUS_LABELS[contract.status] ?? contract.status}
+              {STATUS_LABELS[contract.status]}
             </span>
             {canEdit && (
               <button
@@ -347,7 +326,7 @@ export default function ContractDetailPage() {
           </article>
           <article className="rounded-xl border border-[var(--border)] p-4">
             <p className="text-xs uppercase tracking-wide text-[var(--muted-foreground)]">Status</p>
-            <p className="mt-1 font-medium">{STATUS_LABELS[contract.status] ?? contract.status}</p>
+            <p className="mt-1 font-medium">{STATUS_LABELS[contract.status]}</p>
           </article>
         </div>
       </div>

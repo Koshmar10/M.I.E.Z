@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { api } from '../../api/client'
 
 type ProductRow = {
   id: number
@@ -87,17 +88,11 @@ const SalesProductsPage = () => {
         if (search.trim()) params.set('search', search.trim())
         if (categoryFilter) params.set('category', categoryFilter)
 
-        const response = await fetch(`/api/products/?${params.toString()}`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
-
-        const data = (await response.json()) as ProductListResponse
-        setProducts(Array.isArray(data.results) ? data.results : [])
-        setTotalCount(data.total_count ?? data.count ?? 0)
-        setNextPageUrl(data.next ?? null)
-        setPreviousPageUrl(data.previous ?? null)
+        const data = await api.get<ProductListResponse>(`/api/products/?${params.toString()}`)
+        setProducts(data.results)
+        setTotalCount(data.total_count)
+        setNextPageUrl(data.next)
+        setPreviousPageUrl(data.previous)
       } catch (err) {
         console.error('Failed to load products:', err)
         setError('Could not load products right now.')
@@ -106,7 +101,7 @@ const SalesProductsPage = () => {
       }
     }
 
-    loadProducts()
+    void loadProducts()
   }, [search, categoryFilter, page])
 
   return (

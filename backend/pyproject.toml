@@ -1,0 +1,80 @@
+[project]
+name = "miez-backend"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "anthropic>=1.11,<2",
+    "dj-database-url>=3.1.2,<4",
+    "django>=5.2,<5.3",
+    "django-cors-headers>=4.9,<5",
+    "django-crontab>=0.7.1,<0.8",
+    "django-filter>=25.1,<26",
+    "djangorestframework>=3.16.1,<3.17",
+    "psycopg2-binary>=2.9.11,<3",
+]
+
+[dependency-groups]
+dev = [
+    "django-stubs[compatible-mypy]>=5.2,<5.3",
+    "djangorestframework-stubs[compatible-mypy]>=3.16,<3.17",
+    "model-bakery>=1.20.5,<2",
+    "mypy",
+    "pytest>=9.0.2,<10",
+    "pytest-django>=4.12,<5",
+    "ruff",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["api/migrations"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes: unused imports/variables, undefined names
+    "I",        # import sorting
+    "B",        # bugbear: likely bugs
+    "UP",       # modern syntax for the pinned Python version
+    "DJ",       # Django-specific pitfalls
+    "SIM", "C4", "PERF",
+    "PGH",      # forbid blanket `# type: ignore` / `# noqa` without a rule code
+    "RUF100",   # forbid stale `# noqa` comments
+]
+ignore = [
+    "E501",  # the formatter wraps code; long strings/comments are allowed
+    "W191",  # conflicts with the formatter, which owns indentation
+]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+exclude = ['^\.venv/', '/migrations/']
+check_untyped_defs = true
+strict_equality = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+enable_error_code = ["ignore-without-code"]
+
+# Third-party packages that ship no type information.
+[[tool.mypy.overrides]]
+module = ["django_crontab.*", "django_filters.*"]
+ignore_missing_imports = true
+
+# Tests are verified by running them; only their annotated functions are type-checked.
+[[tool.mypy.overrides]]
+module = ["api.tests.*", "conftest"]
+check_untyped_defs = false
+
+[tool.django-stubs]
+django_settings_module = "core.settings"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "core.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+addopts = "--nomigrations --reuse-db"

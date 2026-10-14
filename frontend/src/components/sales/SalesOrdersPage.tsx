@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { api, errorMessage } from '../../api/client'
 
 type OrderRow = {
   id: number
@@ -158,20 +159,12 @@ const SalesOrdersPage = () => {
           params.set('channel', channelFilter)
         }
 
-        const response = await fetch(`/api/orders/?${params.toString()}`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Orders request failed with status ${response.status}`)
-        }
-
-        const data = (await response.json()) as OrderListResponse
-        setOrders(Array.isArray(data.results) ? data.results : [])
-        setTotalCount(data.total_count ?? 0)
-        setTotalRonSum(data.total_ron_sum ?? '0')
-        setNextPageUrl(data.next ?? null)
-        setPreviousPageUrl(data.previous ?? null)
+        const data = await api.get<OrderListResponse>(`/api/orders/?${params.toString()}`)
+        setOrders(data.results)
+        setTotalCount(data.total_count)
+        setTotalRonSum(data.total_ron_sum)
+        setNextPageUrl(data.next)
+        setPreviousPageUrl(data.previous)
       } catch (error) {
         console.error('Failed to load orders list:', error)
         setOrdersError('Could not load orders right now.')
@@ -180,7 +173,7 @@ const SalesOrdersPage = () => {
       }
     }
 
-    loadOrders()
+    void loadOrders()
   }, [search, statusFilter, channelFilter, page])
 
   const openOrderDetail = async (orderId: number) => {
@@ -190,15 +183,7 @@ const SalesOrdersPage = () => {
       setStatusError('')
       setSelectedOrder(null)
 
-      const response = await fetch(`/api/orders/${orderId}/`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Order detail request failed with status ${response.status}`)
-      }
-
-      const detail = (await response.json()) as OrderDetail
+      const detail = await api.get<OrderDetail>(`/api/orders/${orderId}/`)
       setSelectedOrder(detail)
       setStatusDraft(detail.status || '')
       setIsEditingStatus(false)
@@ -244,21 +229,7 @@ const SalesOrdersPage = () => {
       setStatusSaving(true)
       setStatusError('')
 
-      const response = await fetch(`/api/orders/${selectedOrder.id}/`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ status: statusDraft }),
-      })
-
-      if (!response.ok) {
-        const message = await response.text()
-        throw new Error(message || `Status update failed with ${response.status}`)
-      }
-
-      const updated = (await response.json()) as OrderDetail
+      const updated = await api.patch<OrderDetail>(`/api/orders/${selectedOrder.id}/`, { status: statusDraft })
       setSelectedOrder(updated)
       setStatusDraft(updated.status || '')
       setIsEditingStatus(false)
@@ -267,7 +238,7 @@ const SalesOrdersPage = () => {
       )
     } catch (error) {
       console.error('Failed to update order status:', error)
-      setStatusError('Could not update the order status.')
+      setStatusError(errorMessage(error, 'Could not update the order status.'))
     } finally {
       setStatusSaving(false)
     }
@@ -376,7 +347,7 @@ const SalesOrdersPage = () => {
                     <tr
                       key={order.id}
                       className="bg-white border border-[var(--border)] cursor-pointer hover:bg-black/[0.02]"
-                      onClick={() => openOrderDetail(order.id)}
+                      onClick={() => void openOrderDetail(order.id)}
                     >
                       <td className="px-3 py-2 text-sm font-semibold">{order.order_number}</td>
                       <td className="px-3 py-2 text-sm">{order.customer_name}</td>
@@ -476,7 +447,7 @@ const SalesOrdersPage = () => {
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={saveStatusUpdate}
+                            onClick={() => void saveStatusUpdate()}
                             disabled={statusSaving || statusDraft === selectedOrder.status}
                             className="rounded-lg border border-[var(--border)] bg-black text-white px-3 py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                           >

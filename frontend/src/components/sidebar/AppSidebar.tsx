@@ -14,6 +14,7 @@ import {
   FiZap,
   FiBarChart2,
 } from 'react-icons/fi'
+import { api } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 
 const SIDEBAR_COLLAPSED_KEY = 'miez.sidebar.collapsed'
@@ -87,7 +88,7 @@ const AppSidebar = () => {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true')
   const [departments, setDepartments] = useState<Department[]>([])
   const [lowStockCount, setLowStockCount] = useState<number>(0)
 
@@ -101,11 +102,6 @@ const AppSidebar = () => {
   }, [user?.role])
 
   useEffect(() => {
-    const storedState = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
-    if (storedState !== null) setIsCollapsed(storedState === 'true')
-  }, [])
-
-  useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isCollapsed))
   }, [isCollapsed])
 
@@ -117,13 +113,7 @@ const AppSidebar = () => {
       }
 
       try {
-        const response = await fetch('/api/departments/', { credentials: 'include' })
-        if (!response.ok) {
-          setDepartments([])
-          return
-        }
-        const data = await response.json()
-        if (Array.isArray(data)) setDepartments(data)
+        setDepartments(await api.get<Department[]>('/api/departments/'))
       } catch {
         setDepartments([])
       }
@@ -135,10 +125,10 @@ const AppSidebar = () => {
         setDepartments(customEvent.detail)
         return
       }
-      fetchDepartments()
+      void fetchDepartments()
     }
 
-    fetchDepartments()
+    void fetchDepartments()
     window.addEventListener('departments-updated', onDepartmentsUpdated as EventListener)
 
     return () => {
@@ -150,20 +140,19 @@ const AppSidebar = () => {
     if (user?.role === 'INVENTORY' || user?.role === 'CEO') {
       const fetchAlerts = async () => {
         try {
-          const res = await fetch('/api/inventory/products/?status=LOW&status=OUT', { credentials: 'include' })
-          if (res.ok) {
-            const data = await res.json()
-            setLowStockCount(data.length)
-          }
-        } catch (err) { }
+          const lowStock = await api.get<unknown[]>('/api/inventory/products/?status=LOW&status=OUT')
+          setLowStockCount(lowStock.length)
+        } catch {
+          // the badge is optional; leave it as it was
+        }
       }
-      fetchAlerts()
+      void fetchAlerts()
     }
   }, [user?.role, location.pathname])
 
   const handleLogout = async () => {
     await logout()
-    navigate('/login', { replace: true })
+    await navigate('/login', { replace: true })
   }
 
   return (
@@ -224,8 +213,8 @@ const AppSidebar = () => {
               </p>
             )}
             {departments.map(dep => {
-              const Icon =
-                departmentIcons[(dep.icon as keyof typeof departmentIcons) ?? 'Building2'] ?? FiHome
+              const iconName = dep.icon ?? 'Building2'
+              const Icon = iconName in departmentIcons ? departmentIcons[iconName as keyof typeof departmentIcons] : FiHome
 
               return (
                 <NavLink
@@ -266,7 +255,7 @@ const AppSidebar = () => {
         <button
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[14px] text-white/60 hover:bg-white/10 hover:text-[var(--sidebar-foreground)] w-full text-left transition-colors"
           type="button"
-          onClick={handleLogout}
+          onClick={() => void handleLogout()}
           title={isCollapsed ? 'Logout' : undefined}
         >
           <FiLogOut className="w-5 h-5 shrink-0" aria-hidden="true" />

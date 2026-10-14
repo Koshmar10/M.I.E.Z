@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FiClock, FiDollarSign } from 'react-icons/fi'
+import { api } from '../../api/client'
 
 type PayrollRow = {
   id: number
@@ -86,17 +87,9 @@ export default function PayrollSummaryPage() {
       setError('')
 
       try {
-        const response = await fetch(`/api/payroll/?month=${encodeURIComponent(month)}`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load payroll: ${response.status}`)
-        }
-
-        const data = (await response.json()) as PayrollResponse
-        setRows(Array.isArray(data?.payroll) ? data.payroll : [])
-        setSummary(data?.summary ?? null)
+        const data = await api.get<PayrollResponse>('/api/payroll/', { month })
+        setRows(data.payroll)
+        setSummary(data.summary)
       } catch (err) {
         console.error('Failed to load payroll summary', err)
         setRows([])
@@ -107,7 +100,7 @@ export default function PayrollSummaryPage() {
       }
     }
 
-    loadPayroll()
+    void loadPayroll()
   }, [month])
 
   const processingLabel = useMemo(() => {

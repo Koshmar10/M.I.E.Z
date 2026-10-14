@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api, ApiError, errorMessage } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
 import Markdown from "../common/Markdown";
 
@@ -93,8 +94,9 @@ const MiezAssistant = () => {
   const fetchSessions = useCallback(async () => {
     setLoadingSessions(true);
     try {
-      const res = await fetch("/api/assistant/sessions/", { credentials: "include" });
-      if (res.ok) setSessions(await res.json());
+      setSessions(await api.get<SessionSummary[]>("/api/assistant/sessions/"));
+    } catch {
+      // keep the list as it was
     } finally {
       setLoadingSessions(false);
     }
@@ -103,21 +105,13 @@ const MiezAssistant = () => {
   const loadSession = useCallback(async (id: number) => {
     setRestoring(true);
     try {
-      const res = await fetch(`/api/assistant/sessions/${id}/`, { credentials: "include" });
-      if (!res.ok) {
-        if (user) localStorage.removeItem(SESSION_KEY(user.id));
-        return false;
-      }
-      const data = await res.json();
+      const data = await api.get<{ id: number; messages: Message[] }>(`/api/assistant/sessions/${id}/`);
       setSessionId(data.id);
-      setMessages(
-        (data.messages as { role: "user" | "assistant"; content: string }[]).map((m) => ({
-          role: m.role,
-          content: m.content,
-        }))
-      );
+      setMessages(data.messages.map((m) => ({ role: m.role, content: m.content })));
       return true;
-    } catch {
+    } catch (err) {
+      // a session that no longer exists shouldn't be reopened next time
+      if (err instanceof ApiError && user) localStorage.removeItem(SESSION_KEY(user.id));
       return false;
     } finally {
       setRestoring(false);
@@ -132,20 +126,20 @@ const MiezAssistant = () => {
     if (stored) {
       const id = parseInt(stored, 10);
       if (!isNaN(id) && sessionId !== id) {
-        loadSession(id).then((ok) => {
+        void loadSession(id).then((ok) => {
           if (ok) {
             setView("chat");
           } else {
             setView("list");
-            fetchSessions();
+            void fetchSessions();
           }
         });
       }
     } else {
       setView("list");
-      fetchSessions();
+      void fetchSessions();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- restore the last conversation once each time the panel opens, not on every state change
   }, [open]);
 
   useEffect(() => {
@@ -158,7 +152,7 @@ const MiezAssistant = () => {
 
   const goToList = () => {
     setView("list");
-    fetchSessions();
+    void fetchSessions();
   };
 
   const openSession = async (id: number) => {
@@ -173,7 +167,7 @@ const MiezAssistant = () => {
     setSessionId(null);
     setMessages([]);
     setInput("");
-    if (user) localStorage.removeItem(SESSION_KEY(user.id));
+    localStorage.removeItem(SESSION_KEY(user.id));
     setView("chat");
   };
 
@@ -186,30 +180,19 @@ const MiezAssistant = () => {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/assistant/chat/", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: trimmed,
-          current_page: window.location.pathname,
-          ...(sessionId ? { session_id: sessionId } : {}),
-        }),
+      const data = await api.post<{ response: string; session_id?: number }>("/api/assistant/chat/", {
+        message: trimmed,
+        current_page: window.location.pathname,
+        ...(sessionId ? { session_id: sessionId } : {}),
       });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        if (!sessionId && data.session_id) {
-          setSessionId(data.session_id);
-          localStorage.setItem(SESSION_KEY(user.id), String(data.session_id));
-        }
-        setMessages((prev) => [...prev, { role: "assistant", content: data.response as string }]);
-      } else {
-        setMessages((prev) => [...prev, { role: "assistant", content: data.detail ?? "Something went wrong." }]);
+      if (!sessionId && data.session_id) {
+        setSessionId(data.session_id);
+        localStorage.setItem(SESSION_KEY(user.id), String(data.session_id));
       }
-    } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Could not reach the assistant." }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: data.response }]);
+    } catch (err) {
+      const content = err instanceof ApiError ? errorMessage(err, "Something went wrong.") : "Could not reach the assistant.";
+      setMessages((prev) => [...prev, { role: "assistant", content }]);
     } finally {
       setLoading(false);
     }
@@ -217,8 +200,12 @@ const MiezAssistant = () => {
 
   const deleteSession = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
-    await fetch(`/api/assistant/sessions/${id}/`, { method: "DELETE", credentials: "include" });
-    if (user && localStorage.getItem(SESSION_KEY(user.id)) === String(id)) {
+    try {
+      await api.delete(`/api/assistant/sessions/${id}/`);
+    } catch {
+      return; // keep it in the list; it wasn't deleted
+    }
+    if (localStorage.getItem(SESSION_KEY(user.id)) === String(id)) {
       localStorage.removeItem(SESSION_KEY(user.id));
     }
     setSessions((prev) => prev.filter((s) => s.id !== id));
@@ -286,7 +273,7 @@ const MiezAssistant = () => {
                   {sessions.map((s) => (
                     <li
                       key={s.id}
-                      onClick={() => openSession(s.id)}
+                      onClick={() => void openSession(s.id)}
                       className="flex items-start gap-3 px-4 py-3 hover:bg-white cursor-pointer group"
                     >
                       <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center text-red-500 text-xs font-bold shrink-0 mt-0.5">M</div>
@@ -295,7 +282,7 @@ const MiezAssistant = () => {
                         <div className="text-sm text-gray-700 truncate">{s.preview || "Empty conversation"}</div>
                       </div>
                       <button
-                        onClick={(e) => deleteSession(e, s.id)}
+                        onClick={(e) => void deleteSession(e, s.id)}
                         className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-sm shrink-0 mt-1"
                         title="Delete"
                       >
@@ -328,7 +315,7 @@ const MiezAssistant = () => {
                             {config.suggested.map((s) => (
                               <button
                                 key={s}
-                                onClick={() => send(s)}
+                                onClick={() => void send(s)}
                                 className="w-full text-left text-sm px-3 py-2 rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors cursor-pointer"
                               >
                                 {s}
@@ -373,13 +360,15 @@ const MiezAssistant = () => {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && send(input)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void send(input);
+                  }}
                   placeholder="Type a message..."
                   disabled={loading || restoring}
                   className="flex-1 text-sm px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-300 bg-gray-50 disabled:opacity-50"
                 />
                 <button
-                  onClick={() => send(input)}
+                  onClick={() => void send(input)}
                   disabled={loading || restoring || !input.trim()}
                   className="h-9 w-9 rounded-full bg-red-400 hover:bg-red-500 flex items-center justify-center text-white disabled:opacity-40 cursor-pointer transition-colors shrink-0"
                 >

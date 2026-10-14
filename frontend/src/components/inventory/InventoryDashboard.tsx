@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
+import type { IconType } from "react-icons";
+import { api, type Page } from "../../api/client";
 import { FiX, FiPackage, FiBox, FiAlertTriangle, FiXCircle, FiTruck, FiRepeat, FiCheck, FiSearch, FiFilter, FiArrowRight } from "react-icons/fi";
 
 // --- API DATA TYPES ---
@@ -23,131 +26,150 @@ interface ApiProduct {
 
 interface FlowData {
   nodes: { name: string; type?: string }[];
-  links: { source: number; target: number; value: number; items: string }[];
+  links: { source: number; target: number; value: number; items: string; product_name?: string }[];
   date_range?: { start: string; end: string };
 }
 
 // --- LOGISTICS TRACE OVERVIEW ---
-// --- LOGISTICS TRACE OVERVIEW ---
-// --- LOGISTICS TRACE OVERVIEW ---
+/** Units that moved between the warehouse and one supplier or destination. */
+type PartnerTrace = { name: string; volume: number; details: string[] };
+/** Where one product came from and went to. */
+type ProductTrace = {
+  name: string;
+  inbound: { from: string; units: number }[];
+  outbound: { to: string; units: number }[];
+  totalIn: number;
+  totalOut: number;
+};
+
+function TraceCard({ title, icon: Icon, accentText, items }: { title: string; icon: IconType; accentText: string; items: ReactNode[] }) {
+  return (
+    <div className="flex-1 bg-[var(--card)] rounded-2xl border border-[var(--border)] overflow-hidden flex flex-col max-h-[600px]">
+      <div className="px-5 py-4 border-b border-[var(--border)] flex items-center gap-3 shrink-0 bg-[var(--input-background)]">
+        <div className={`w-10 h-10 rounded-xl bg-[var(--card)] border border-[var(--border)] grid place-items-center ${accentText}`}>
+          <Icon size={18} />
+        </div>
+        <div>
+          <h3 className="text-[11px] uppercase tracking-[0.14em] font-semibold text-[var(--muted-foreground)]">{title}</h3>
+          <p className="text-sm font-semibold mt-0.5">{items.length} active records</p>
+        </div>
+      </div>
+
+      <div className="divide-y divide-[var(--border)] overflow-y-auto flex-1 slim-scroll">
+        {items.length > 0 ? items : (
+          <div className="text-sm text-[var(--muted-foreground)] py-8 text-center italic">No movement data available</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PartnerTraceItem({ trace, direction }: { trace: PartnerTrace; direction: 'in' | 'out' }) {
+  const [accentText, accentBg] = direction === 'out' ? ['text-rose-700', 'bg-rose-50'] : ['text-emerald-700', 'bg-emerald-50'];
+  return (
+    <div className="p-4 hover:bg-[var(--input-background)] transition-colors">
+      <div className="flex justify-between items-start mb-2.5 gap-3">
+        <h4 className="text-sm font-semibold">{trace.name}</h4>
+        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${accentBg} ${accentText} border border-current/20`}>
+          {trace.volume.toLocaleString()} units
+        </span>
+      </div>
+      <div className="bg-[var(--input-background)] rounded-lg p-2.5 border border-[var(--border)]">
+        <p className="text-[10px] uppercase tracking-[0.14em] font-semibold text-[var(--muted-foreground)] mb-1.5">
+          {direction === 'out' ? 'Items Sent' : 'Items Received'}
+        </p>
+        <ul className="space-y-1">
+          {trace.details.map((detail, j) => (
+            <li key={j} className="text-xs text-[var(--muted-foreground)] flex items-start gap-2">
+              <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${direction === 'out' ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+              {detail}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function ProductTraceItem({ trace }: { trace: ProductTrace }) {
+  return (
+    <div className="p-4 hover:bg-[var(--input-background)] transition-colors">
+      <div className="flex justify-between items-start mb-2.5 gap-3">
+        <h4 className="text-sm font-semibold">{trace.name}</h4>
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] border border-current/20">
+          {(trace.totalIn + trace.totalOut).toLocaleString()} moved
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-emerald-50 rounded-lg p-2 border border-emerald-200/60">
+          <p className="text-[10px] font-semibold text-emerald-700 uppercase tracking-[0.14em] mb-1">In ({trace.totalIn})</p>
+          {trace.inbound.length > 0 ? trace.inbound.map((entry, j) => (
+            <p key={j} className="text-[11px] text-[var(--muted-foreground)] truncate" title={entry.from}>• {entry.from} ({entry.units})</p>
+          )) : <p className="text-[11px] text-[var(--muted-foreground)] italic">None</p>}
+        </div>
+        <div className="bg-rose-50 rounded-lg p-2 border border-rose-200/60">
+          <p className="text-[10px] font-semibold text-rose-700 uppercase tracking-[0.14em] mb-1">Out ({trace.totalOut})</p>
+          {trace.outbound.length > 0 ? trace.outbound.map((entry, j) => (
+            <p key={j} className="text-[11px] text-[var(--muted-foreground)] truncate" title={entry.to}>• {entry.to} ({entry.units})</p>
+          )) : <p className="text-[11px] text-[var(--muted-foreground)] italic">None</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LogisticsOverview({ data }: { data: FlowData }) {
-  const inboundMap: Record<number, { supplier: string; volume: number; details: string[] }> = {};
-  const outboundMap: Record<number, { destination: string; volume: number; details: string[] }> = {};
-  const productMap: Record<string, { inbound: { s: string; v: number }[]; outbound: { d: string; v: number }[]; totalIn: number; totalOut: number }> = {};
+  const inbound = new Map<number, PartnerTrace>();
+  const outbound = new Map<number, PartnerTrace>();
+  const products = new Map<string, ProductTrace>(
+    data.nodes
+      .filter(n => n.type === 'product')
+      .map(n => [n.name, { name: n.name, inbound: [], outbound: [], totalIn: 0, totalOut: 0 }]),
+  );
 
-  // Initialize product map from nodes
-  data.nodes.filter(n => n.type === 'product').forEach(p => {
-    productMap[p.name] = { inbound: [], outbound: [], totalIn: 0, totalOut: 0 };
-  });
+  const traceFor = (traces: Map<number, PartnerTrace>, index: number, name: string) => {
+    let trace = traces.get(index);
+    if (!trace) {
+      trace = { name, volume: 0, details: [] };
+      traces.set(index, trace);
+    }
+    return trace;
+  };
 
-  data.links.forEach(l => {
-    const sourceNode = data.nodes[l.source];
-    const targetNode = data.nodes[l.target];
-    const pName = (l as any).product_name;
+  for (const link of data.links) {
+    const sourceNode = data.nodes.at(link.source);
+    const targetNode = data.nodes.at(link.target);
+    const product = link.product_name ? products.get(link.product_name) : undefined;
 
     // Supplier -> Product
     if (sourceNode?.type === 'supplier') {
-      if (!inboundMap[l.source]) inboundMap[l.source] = { supplier: sourceNode.name, volume: 0, details: [] };
-      inboundMap[l.source].volume += l.value;
-      inboundMap[l.source].details.push(l.items ? l.items : `${targetNode?.name || 'Items'} (${l.value})`);
-      
-      if (pName && productMap[pName]) {
-        productMap[pName].inbound.push({ s: sourceNode.name, v: l.value });
-        productMap[pName].totalIn += l.value;
+      const trace = traceFor(inbound, link.source, sourceNode.name);
+      trace.volume += link.value;
+      trace.details.push(link.items || `${targetNode?.name ?? 'Items'} (${link.value})`);
+      if (product) {
+        product.inbound.push({ from: sourceNode.name, units: link.value });
+        product.totalIn += link.value;
       }
     }
 
     // Warehouse -> Outbound
     if (targetNode?.type === 'out') {
-      if (!outboundMap[l.target]) outboundMap[l.target] = { destination: targetNode.name, volume: 0, details: [] };
-      outboundMap[l.target].volume += l.value;
-      outboundMap[l.target].details.push(l.items ? l.items : `Items (${l.value})`);
-
-      if (pName && productMap[pName]) {
-        productMap[pName].outbound.push({ d: targetNode.name, v: l.value });
-        productMap[pName].totalOut += l.value;
+      const trace = traceFor(outbound, link.target, targetNode.name);
+      trace.volume += link.value;
+      trace.details.push(link.items || `Items (${link.value})`);
+      if (product) {
+        product.outbound.push({ to: targetNode.name, units: link.value });
+        product.totalOut += link.value;
       }
     }
-  });
+  }
 
-  const inboundList = Object.values(inboundMap).sort((a, b) => b.volume - a.volume);
-  const outboundList = Object.values(outboundMap).sort((a, b) => b.volume - a.volume);
-  const productList = Object.entries(productMap)
-    .filter(([_, pd]) => pd.totalIn > 0 || pd.totalOut > 0)
-    .map(([name, pd]) => ({ name, ...pd }))
+  const byVolume = (a: PartnerTrace, b: PartnerTrace) => b.volume - a.volume;
+  const inboundList = [...inbound.values()].sort(byVolume);
+  const outboundList = [...outbound.values()].sort(byVolume);
+  const productList = [...products.values()]
+    .filter(p => p.totalIn > 0 || p.totalOut > 0)
     .sort((a, b) => (b.totalIn + b.totalOut) - (a.totalIn + a.totalOut));
-
-  const renderTraceCard = (title: string, icon: any, list: any[], accentText: string, accentBg: string, mode: 'in' | 'out' | 'prod') => {
-    const Icon = icon;
-    return (
-      <div className="flex-1 bg-[var(--card)] rounded-2xl border border-[var(--border)] overflow-hidden flex flex-col max-h-[600px]">
-        <div className="px-5 py-4 border-b border-[var(--border)] flex items-center gap-3 shrink-0 bg-[var(--input-background)]">
-          <div className={`w-10 h-10 rounded-xl bg-[var(--card)] border border-[var(--border)] grid place-items-center ${accentText}`}>
-            <Icon size={18} />
-          </div>
-          <div>
-            <h3 className="text-[11px] uppercase tracking-[0.14em] font-semibold text-[var(--muted-foreground)]">{title}</h3>
-            <p className="text-sm font-semibold mt-0.5">{list.length} active records</p>
-          </div>
-        </div>
-
-        <div className="divide-y divide-[var(--border)] overflow-y-auto flex-1 slim-scroll">
-          {list.length > 0 ? list.map((item, i) => (
-            <div key={i} className="p-4 hover:bg-[var(--input-background)] transition-colors">
-              {mode !== 'prod' ? (
-                <>
-                  <div className="flex justify-between items-start mb-2.5 gap-3">
-                    <h4 className="text-sm font-semibold">{mode === 'out' ? item.destination : item.supplier}</h4>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${accentBg} ${accentText} border border-current/20`}>
-                      {item.volume.toLocaleString()} units
-                    </span>
-                  </div>
-                  <div className="bg-[var(--input-background)] rounded-lg p-2.5 border border-[var(--border)]">
-                    <p className="text-[10px] uppercase tracking-[0.14em] font-semibold text-[var(--muted-foreground)] mb-1.5">
-                      {mode === 'out' ? 'Items Sent' : 'Items Received'}
-                    </p>
-                    <ul className="space-y-1">
-                      {item.details.map((detail: string, j: number) => (
-                        <li key={j} className="text-xs text-[var(--muted-foreground)] flex items-start gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${mode === 'out' ? 'bg-rose-400' : 'bg-emerald-400'}`} />
-                          {detail}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex justify-between items-start mb-2.5 gap-3">
-                    <h4 className="text-sm font-semibold">{item.name}</h4>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${accentBg} ${accentText} border border-current/20`}>
-                      {(item.totalIn + item.totalOut).toLocaleString()} moved
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-emerald-50 rounded-lg p-2 border border-emerald-200/60">
-                      <p className="text-[10px] font-semibold text-emerald-700 uppercase tracking-[0.14em] mb-1">In ({item.totalIn})</p>
-                      {item.inbound.length > 0 ? item.inbound.map((inc: any, j: number) => (
-                        <p key={j} className="text-[11px] text-[var(--muted-foreground)] truncate" title={inc.s}>• {inc.s} ({inc.v})</p>
-                      )) : <p className="text-[11px] text-[var(--muted-foreground)] italic">None</p>}
-                    </div>
-                    <div className="bg-rose-50 rounded-lg p-2 border border-rose-200/60">
-                      <p className="text-[10px] font-semibold text-rose-700 uppercase tracking-[0.14em] mb-1">Out ({item.totalOut})</p>
-                      {item.outbound.length > 0 ? item.outbound.map((outc: any, j: number) => (
-                        <p key={j} className="text-[11px] text-[var(--muted-foreground)] truncate" title={outc.d}>• {outc.d} ({outc.v})</p>
-                      )) : <p className="text-[11px] text-[var(--muted-foreground)] italic">None</p>}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )) : (
-            <div className="text-sm text-[var(--muted-foreground)] py-8 text-center italic">No movement data available</div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="relative">
@@ -168,16 +190,31 @@ function LogisticsOverview({ data }: { data: FlowData }) {
         }
       `}</style>
       <div className="flex flex-col lg:flex-row gap-4 h-[600px]">
-        {renderTraceCard('Suppliers Trace', FiTruck, inboundList, 'text-emerald-700', 'bg-emerald-50', 'in')}
-        {renderTraceCard('Product Trace', FiPackage, productList, 'text-[var(--primary)]', 'bg-[var(--primary)]/10', 'prod')}
-        {renderTraceCard('Destinations Trace', FiArrowRight, outboundList, 'text-rose-700', 'bg-rose-50', 'out')}
+        <TraceCard
+          title="Suppliers Trace"
+          icon={FiTruck}
+          accentText="text-emerald-700"
+          items={inboundList.map((trace, i) => <PartnerTraceItem key={i} trace={trace} direction="in" />)}
+        />
+        <TraceCard
+          title="Product Trace"
+          icon={FiPackage}
+          accentText="text-[var(--primary)]"
+          items={productList.map((trace, i) => <ProductTraceItem key={i} trace={trace} />)}
+        />
+        <TraceCard
+          title="Destinations Trace"
+          icon={FiArrowRight}
+          accentText="text-rose-700"
+          items={outboundList.map((trace, i) => <PartnerTraceItem key={i} trace={trace} direction="out" />)}
+        />
       </div>
     </div>
   );
 }
 
 // --- UI COMPONENTS ---
-const KPICard = ({ label, value, sub, icon: Icon }: any) => (
+const KPICard = ({ label, value, sub, icon: Icon }: { label: string; value: ReactNode; sub?: string; icon: IconType }) => (
   <article className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 flex items-start justify-between gap-3">
     <div className="flex flex-col">
       <p className="text-[11px] uppercase tracking-[0.14em] text-[var(--muted-foreground)] font-medium">{label}</p>
@@ -190,19 +227,18 @@ const KPICard = ({ label, value, sub, icon: Icon }: any) => (
   </article>
 );
 
-const StatusBadge = ({ status }: { status: string }) => {
-  const styles: Record<string, string> = {
-    OK: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    LOW: "bg-amber-50 text-amber-700 border-amber-200",
-    OUT: "bg-rose-50 text-rose-700 border-rose-200",
-  };
-  const label: Record<string, string> = { OK: 'Healthy', LOW: 'Low Stock', OUT: 'Depleted' };
-  const icons: Record<string, any> = { OK: FiCheck, LOW: FiAlertTriangle, OUT: FiXCircle };
-  const Icon = icons[status] || FiBox;
+const STOCK_STATUS: Record<ApiProduct['status'], { label: string; style: string; icon: IconType }> = {
+  OK: { label: 'Healthy', style: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: FiCheck },
+  LOW: { label: 'Low Stock', style: 'bg-amber-50 text-amber-700 border-amber-200', icon: FiAlertTriangle },
+  OUT: { label: 'Depleted', style: 'bg-rose-50 text-rose-700 border-rose-200', icon: FiXCircle },
+};
+
+const StatusBadge = ({ status }: { status: ApiProduct['status'] }) => {
+  const { label, style, icon: Icon } = STOCK_STATUS[status];
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${styles[status] ?? "bg-[var(--input-background)] text-[var(--muted-foreground)] border-[var(--border)]"}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${style}`}>
       <Icon size={12} />
-      {label[status] ?? status}
+      {label}
     </span>
   );
 };
@@ -268,62 +304,37 @@ const DetailDrawer = ({ open, onClose, product }: { open: boolean, onClose: () =
 
 // --- MAIN DASHBOARD COMPONENT ---
 export default function InventoryDashboard() {
-  const [kpis, setKpis] = useState<DashboardKpis | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [products, setProducts] = useState<ApiProduct[]>([]);
-  const [loadingProducts, setLoadingProducts] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<ApiProduct | null>(null);
-  const [flowData, setFlowData] = useState<FlowData | null>(null);
-
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [totalProducts, setTotalProducts] = useState(0);
   const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    fetch('/api/inventory/dashboard/', { credentials: 'include' })
-      .then(r => { if (r.ok) return r.json(); throw new Error() })
-      .then(data => setKpis(data))
-      .catch(() => { })
-      .finally(() => setLoading(false))
-  }, []);
+  const kpisQuery = useQuery({
+    queryKey: ['inventory', 'dashboard'],
+    queryFn: () => api.get<DashboardKpis>('/api/inventory/dashboard/'),
+  });
+  const flowQuery = useQuery({
+    queryKey: ['inventory', 'flow', 7],
+    queryFn: () => api.get<FlowData>('/api/inventory/flow/', { days: 7 }),
+  });
+  const productsQuery = useQuery({
+    queryKey: ['inventory', 'products', { search, category, statusFilter, page }],
+    queryFn: () =>
+      api.get<Page<ApiProduct>>('/api/inventory/products/', {
+        search,
+        category: category === 'All' ? undefined : category,
+        status: statusFilter === 'All' ? undefined : statusFilter,
+        page,
+      }),
+  });
 
-  useEffect(() => {
-    setLoadingProducts(true);
-    const params = new URLSearchParams();
-    if (search) params.append('search', search);
-    if (category !== 'All') params.append('category', category);
-    if (statusFilter !== 'All') params.append('status', statusFilter);
-    params.append('page', page.toString());
-
-    fetch(`/api/inventory/products/?${params.toString()}`, { credentials: 'include' })
-      .then(r => r.json())
-      .then(data => {
-        if (data && data.results && Array.isArray(data.results)) {
-          setProducts(data.results);
-          setTotalProducts(data.count ?? 0);
-        } else if (Array.isArray(data)) {
-          setProducts(data);
-          setTotalProducts(data.length);
-        } else {
-          setProducts([]);
-          setTotalProducts(0);
-        }
-      })
-      .catch(() => {
-        setProducts([]);
-        setTotalProducts(0);
-      })
-      .finally(() => setLoadingProducts(false))
-  }, [search, category, statusFilter, page]);
-
-  useEffect(() => {
-    fetch('/api/inventory/flow/?days=7', { credentials: 'include' })
-      .then(r => r.json())
-      .then(data => setFlowData(data))
-      .catch(() => { })
-  }, []);
+  const kpis = kpisQuery.data;
+  const loading = kpisQuery.isPending;
+  const flowData = flowQuery.data;
+  const products = productsQuery.data?.results ?? [];
+  const totalProducts = productsQuery.data?.count ?? 0;
+  const loadingProducts = productsQuery.isPending;
 
   return (
     <div className="space-y-6">
@@ -380,7 +391,7 @@ export default function InventoryDashboard() {
             </span>
           )}
         </header>
-        {flowData && flowData.nodes && flowData.nodes.length > 0 ? (
+        {flowData && flowData.nodes.length > 0 ? (
           <LogisticsOverview data={flowData} />
         ) : (
           <div className="flex items-center justify-center h-40 text-[var(--muted-foreground)] animate-pulse">Loading logistics...</div>

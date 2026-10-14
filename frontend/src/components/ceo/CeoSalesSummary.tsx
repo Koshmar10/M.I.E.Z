@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { api } from '../../api/client'
 
 type SalesKpiResponse = {
   orders_today: number
@@ -55,19 +56,11 @@ const CeoSalesSummary = () => {
         setLoading(true)
         setError('')
 
-        const [kpiRes, trendRes, topRes] = await Promise.all([
-          fetch('/api/sales/dashboard/', { credentials: 'include' }),
-          fetch('/api/sales/revenue-trend/', { credentials: 'include' }),
-          fetch('/api/sales/top-products/', { credentials: 'include' }),
+        const [kpiData, trendData, topData] = await Promise.all([
+          api.get<SalesKpiResponse>('/api/sales/dashboard/'),
+          api.get<{ days: RevenueTrendDay[] }>('/api/sales/revenue-trend/'),
+          api.get<{ products: TopProduct[] }>('/api/sales/top-products/'),
         ])
-
-        if (!kpiRes.ok) throw new Error(`Sales KPIs failed: ${kpiRes.status}`)
-        if (!trendRes.ok) throw new Error(`Sales trend failed: ${trendRes.status}`)
-        if (!topRes.ok) throw new Error(`Sales top products failed: ${topRes.status}`)
-
-        const kpiData = (await kpiRes.json()) as SalesKpiResponse
-        const trendData = (await trendRes.json()) as { days: RevenueTrendDay[] }
-        const topData = (await topRes.json()) as { products: TopProduct[] }
 
         setKpis(kpiData)
         setTrend(Array.isArray(trendData.days) ? trendData.days : [])
@@ -80,7 +73,7 @@ const CeoSalesSummary = () => {
       }
     }
 
-    load()
+    void load()
   }, [])
 
   const kpiTiles = useMemo(() => {

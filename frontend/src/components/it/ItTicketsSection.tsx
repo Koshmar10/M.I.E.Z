@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { api, errorMessage } from "../../api/client";
 
 export type TicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
 export type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
@@ -206,11 +207,11 @@ const ItTicketsSection = ({
         left = statusOrder[a.status];
         right = statusOrder[b.status];
       } else if (sortKey === "created_at" || sortKey === "updated_at" || sortKey === "resolved_at") {
-        left = a[sortKey] ? new Date(a[sortKey] as string).getTime() : 0;
-        right = b[sortKey] ? new Date(b[sortKey] as string).getTime() : 0;
+        left = a[sortKey] ? new Date(a[sortKey]).getTime() : 0;
+        right = b[sortKey] ? new Date(b[sortKey]).getTime() : 0;
       } else {
-        left = normalizeValue(a[sortKey] as string | null);
-        right = normalizeValue(b[sortKey] as string | null);
+        left = normalizeValue(a[sortKey]);
+        right = normalizeValue(b[sortKey]);
       }
 
       if (left < right) {
@@ -280,24 +281,10 @@ const ItTicketsSection = ({
         payload.assigned_to = currentUserId;
       }
 
-      const response = await fetch(`/api/tickets/${selectedTicket.id}/`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || `Ticket update failed with ${response.status}`);
-      }
-
-      const responseData = (await response.json()) as {
-        status?: TicketStatus;
-        resolved_at?: string | null;
-      };
+      const responseData = await api.patch<{ status?: TicketStatus; resolved_at?: string | null }>(
+        `/api/tickets/${selectedTicket.id}/`,
+        payload,
+      );
 
       const updatedTicket: TicketItem = {
         ...selectedTicket,
@@ -313,7 +300,7 @@ const ItTicketsSection = ({
       onTicketUpdated?.(updatedTicket);
     } catch (error) {
       console.error("Failed to update ticket:", error);
-      setTicketUpdateError("Could not update the ticket status.");
+      setTicketUpdateError(errorMessage(error, "Could not update the ticket status."));
     } finally {
       setIsUpdatingTicket(false);
     }
@@ -717,7 +704,7 @@ const ItTicketsSection = ({
               {canManageTicket && selectedTicket.status === "OPEN" && (
                 <button
                   type="button"
-                  onClick={() => updateTicketStatus("IN_PROGRESS")}
+                  onClick={() => void updateTicketStatus("IN_PROGRESS")}
                   disabled={isUpdatingTicket}
                   className="cursor-pointer bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg px-3.5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -728,7 +715,7 @@ const ItTicketsSection = ({
               {canManageTicket && selectedTicket.status === "IN_PROGRESS" && (
                 <button
                   type="button"
-                  onClick={() => updateTicketStatus("RESOLVED")}
+                  onClick={() => void updateTicketStatus("RESOLVED")}
                   disabled={isUpdatingTicket}
                   className="cursor-pointer bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg px-3.5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
                 >

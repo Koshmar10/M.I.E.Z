@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { api } from '../../api/client'
 import {
   BarChart,
   Bar,
@@ -100,19 +101,11 @@ const SalesCustomersPage = () => {
         params.set('page', String(page))
         params.set('page_size', '10')
 
-        const response = await fetch(`/api/customers/?${params.toString()}`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Customers request failed with status ${response.status}`)
-        }
-
-        const data = (await response.json()) as CustomerListResponse
-        setCustomers(Array.isArray(data.results) ? data.results : [])
-        setTotalCount(data.count ?? 0)
-        setNextPageUrl(data.next ?? null)
-        setPreviousPageUrl(data.previous ?? null)
+        const data = await api.get<CustomerListResponse>(`/api/customers/?${params.toString()}`)
+        setCustomers(data.results)
+        setTotalCount(data.count)
+        setNextPageUrl(data.next)
+        setPreviousPageUrl(data.previous)
       } catch (err) {
         console.error('Failed to load customers:', err)
         setError('Could not load customers right now.')
@@ -121,7 +114,7 @@ const SalesCustomersPage = () => {
       }
     }
 
-    loadCustomers()
+    void loadCustomers()
   }, [page])
 
   const filteredCustomers = search.trim()
@@ -139,16 +132,7 @@ const SalesCustomersPage = () => {
       setDetailError('')
       setSelectedCustomer(null)
 
-      const response = await fetch(`/api/customers/${customerId}/`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Customer detail request failed with status ${response.status}`)
-      }
-
-      const detail = (await response.json()) as CustomerDetail
-      setSelectedCustomer(detail)
+      setSelectedCustomer(await api.get<CustomerDetail>(`/api/customers/${customerId}/`))
     } catch (err) {
       console.error('Failed to load customer detail:', err)
       setDetailError('Could not load customer details.')
@@ -232,7 +216,7 @@ const SalesCustomersPage = () => {
                     <tr
                       key={customer.id}
                       className="bg-white border border-[var(--border)] cursor-pointer hover:bg-black/[0.02]"
-                      onClick={() => openCustomerDetail(customer.id)}
+                      onClick={() => void openCustomerDetail(customer.id)}
                     >
                       <td className="px-3 py-2 text-sm font-semibold">{customer.name}</td>
                       <td className="px-3 py-2 text-sm text-black/60">{customer.contact_name || '—'}</td>

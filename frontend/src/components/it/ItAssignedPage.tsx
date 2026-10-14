@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
+import { api, type Page } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
 import ItTicketsSection, { type TicketItem } from "./ItTicketsSection";
 import StatCard from "./StatsCard";
 import { LuTicket } from "react-icons/lu";
 import { IoSunnyOutline } from "react-icons/io5";
 import { IoMdCheckmarkCircleOutline } from "react-icons/io";
+
+type AssignedTicketsPage = Page<TicketItem> & {
+  technician_summary?: { assigned_count: number; in_progress_count: number; resolved_count: number };
+};
 
 const ItAssignedPage = () => {
   const { user } = useAuth();
@@ -26,23 +31,20 @@ const ItAssignedPage = () => {
         let first = true;
 
         while (nextUrl) {
-          const res = await fetch(nextUrl, { credentials: "include" });
-          if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-          const data = await res.json();
+          const data: AssignedTicketsPage = await api.get<AssignedTicketsPage>(nextUrl);
 
           if (first) {
             first = false;
-            if (data.technician_summary) {
-              const ts = data.technician_summary;
-              if (typeof ts.assigned_count === 'number') setAssignedCount(ts.assigned_count);
-              if (typeof ts.in_progress_count === 'number') setInProgressCount(ts.in_progress_count);
-              if (typeof ts.resolved_count === 'number') setResolvedCount(ts.resolved_count);
+            const ts = data.technician_summary;
+            if (ts) {
+              setAssignedCount(ts.assigned_count);
+              setInProgressCount(ts.in_progress_count);
+              setResolvedCount(ts.resolved_count);
             }
           }
 
-            const items = Array.isArray(data.results) ? (data.results as unknown as TicketItem[]) : [];
-            all.push(...items);
-          nextUrl = typeof data.next === "string" ? new URL(data.next).pathname + new URL(data.next).search : null;
+          all.push(...data.results);
+          nextUrl = data.next;
         }
 
         setTickets(all);
@@ -54,7 +56,7 @@ const ItAssignedPage = () => {
       }
     };
 
-    fetchAssigned();
+    void fetchAssigned();
   }, []);
 
   return (

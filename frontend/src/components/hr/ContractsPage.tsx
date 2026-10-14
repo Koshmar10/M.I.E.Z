@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FiClock, FiUsers } from 'react-icons/fi'
+import { api } from '../../api/client'
 
 type ContractStatus = 'ACTIVE' | 'EXPIRING' | 'EXPIRED'
 type ContractType = 'EMPLOYMENT' | 'CONTRACTOR'
@@ -76,13 +77,8 @@ export default function ContractsPage() {
     const loadContracts = async () => {
       setLoading(true)
       try {
-        const response = await fetch('/api/contracts/', { credentials: 'include' })
-        if (!response.ok) {
-          throw new Error(`Failed to load contracts: ${response.status}`)
-        }
-
-        const data = (await response.json()) as ContractsResponse
-        setContracts(Array.isArray(data?.contracts) ? data.contracts : [])
+        const data = await api.get<ContractsResponse>('/api/contracts/')
+        setContracts(data.contracts)
       } catch (error) {
         console.error('Failed to load contracts', error)
         setContracts([])
@@ -91,7 +87,7 @@ export default function ContractsPage() {
       }
     }
 
-    loadContracts()
+    void loadContracts()
   }, [])
 
   const filteredContracts = useMemo(() => {
@@ -107,7 +103,7 @@ export default function ContractsPage() {
   }), [contracts])
 
   const openContract = (id: number) => {
-    navigate(`/hr/contracts/${id}`)
+    void navigate(`/hr/contracts/${id}`)
   }
 
   return (

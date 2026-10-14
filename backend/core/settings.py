@@ -12,7 +12,6 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 from pathlib import Path
-from datetime import timedelta
 
 import dj_database_url
 
@@ -47,9 +46,7 @@ EMAIL_TIMEOUT = int(os.environ.get('SMTP_TIMEOUT', '10'))
 _email_from_address = os.environ.get('EMAIL_FROM', EMAIL_HOST_USER)
 _email_from_name = os.environ.get('EMAIL_FROM_NAME', '')
 DEFAULT_FROM_EMAIL = (
-    f'{_email_from_name} <{_email_from_address}>'
-    if _email_from_name and _email_from_address
-    else _email_from_address
+    f'{_email_from_name} <{_email_from_address}>' if _email_from_name and _email_from_address else _email_from_address
 )
 SERVER_EMAIL = _email_from_address
 
@@ -69,7 +66,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'rest_framework_simplejwt', # <--- Adaugă această linie
     'corsheaders',
     'django_filters',
     'django_crontab',
@@ -115,11 +111,7 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL', 'sqlite:///db.sqlite3')
-    )
-}
+DATABASES = {'default': dj_database_url.config(default=os.environ.get('DATABASE_URL', 'sqlite:///db.sqlite3'))}
 
 
 # Password validation
@@ -141,7 +133,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",   # portul Vite
+    'http://localhost:5173',  # portul Vite
 ]
 ALLOWED_HOSTS = ['*']  # development
 # Internationalization
@@ -162,32 +154,33 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'core.authenticate.CustomAuthentication',
-    ),
+    'DEFAULT_AUTHENTICATION_CLASSES': ('core.authentication.SessionAuthentication',),
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
     ],
     'EXCEPTION_HANDLER': 'core.exception_handler.custom_exception_handler',
 }
 
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'AUTH_COOKIE': 'access_token',
-    'AUTH_COOKIE_REFRESH': 'refresh_token',
-    'AUTH_COOKIE_HTTP_ONLY': True,
-    'AUTH_COOKIE_PATH': '/',
-    'AUTH_COOKIE_SAMESITE': 'Lax',
-    # Send auth cookies over HTTPS only outside local development.
-    'AUTH_COOKIE_SECURE': False,
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': os.environ.get('JWT_SIGNING_KEY', 'miez-jwt-key-min-32-bytes-long-very-secure'),
-}
+# ── Login sessions ───────────────────────────────────────────────────────────
+# Logging in sets an httpOnly `sessionid` cookie; the session lives in the database.
+# A session ends after a day without requests (each request extends it).
+SESSION_COOKIE_AGE = 60 * 60 * 24
+SESSION_SAVE_EVERY_REQUEST = True
+
+# Requests that change data must send the `csrftoken` cookie's value in an `X-CSRFToken` header.
+# The frontend reaches the API through a proxy, so the browser's Origin (the frontend's address)
+# has to be listed here. Set CSRF_TRUSTED_ORIGINS (comma-separated) in each environment.
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()
+] or ['http://localhost:5173', 'http://127.0.0.1:5173']
+
+# Only send the session and CSRF cookies over HTTPS. Turn on once the site is served over HTTPS.
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = os.environ.get('SECURE_COOKIES', 'False') == 'True'
 
 AUTH_USER_MODEL = 'api.User'
+
+# Matches the primary keys the existing migrations already use (silences models.W042).
+DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
 # Cache configuration for rate limiting and caching
 CACHES = {
@@ -196,7 +189,7 @@ CACHES = {
         'LOCATION': 'miez-cache',
         'OPTIONS': {
             'MAX_ENTRIES': 10000,
-        }
+        },
     }
 }
 

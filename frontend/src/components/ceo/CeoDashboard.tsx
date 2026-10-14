@@ -14,6 +14,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { useAuth } from '../../context/AuthContext'
 import UpcomingEventsWidget from '../hr/UpcomingEventsWidget'
 import CeoItSummary from './CeoItSummary'
+import { api } from '../../api/client'
 import CeoSalesSummary from './CeoSalesSummary'
 import CeoInventorySummary from './CeoInventorySummary'
 
@@ -70,15 +71,7 @@ const CeoDashboard = () => {
       }
 
       try {
-        const response = await fetch('/api/departments/', {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load departments: ${response.status}`)
-        }
-
-        const data = (await response.json()) as Department[]
+        const data = await api.get<Department[]>('/api/departments/')
         setDepartments(data)
         window.dispatchEvent(new CustomEvent('departments-updated', { detail: data }))
       } catch (error) {
@@ -88,7 +81,7 @@ const CeoDashboard = () => {
       }
     }
 
-    fetchDepartments()
+    void fetchDepartments()
   }, [user?.role])
 
   useEffect(() => {
@@ -103,16 +96,7 @@ const CeoDashboard = () => {
         setHrSummaryLoading(true)
         setHrSummaryError('')
 
-        const response = await fetch('/api/hr/ceo-summary/', {
-          credentials: 'include',
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load CEO HR summary: ${response.status}`)
-        }
-
-        const data = (await response.json()) as CeoHrSummaryResponse
-        setHrSummary(data)
+        setHrSummary(await api.get<CeoHrSummaryResponse>('/api/hr/ceo-summary/'))
       } catch (error) {
         console.error('Eroare la incarcarea HR summary pentru CEO', error)
         setHrSummaryError('Could not load HR summary data right now.')
@@ -121,7 +105,7 @@ const CeoDashboard = () => {
       }
     }
 
-    fetchHrSummary()
+    void fetchHrSummary()
   }, [user?.role])
 
   const attendanceChartData = useMemo(() => {
@@ -140,15 +124,7 @@ const CeoDashboard = () => {
 
   const handleDelete = async (id: number) => {
     try {
-      const response = await fetch(`/api/departments/${id}/`, {
-        method: 'DELETE',
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to delete department: ${response.status}`)
-      }
-
+      await api.delete(`/api/departments/${id}/`)
       setDepartments(current => {
         const next = current.filter(dep => dep.id !== id)
         window.dispatchEvent(new CustomEvent('departments-updated', { detail: next }))
@@ -167,7 +143,7 @@ const CeoDashboard = () => {
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
 
-  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (event: React.SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const payload = {
@@ -181,20 +157,7 @@ const CeoDashboard = () => {
     }
 
     try {
-      const response = await fetch('/api/departments/', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to create department: ${response.status}`)
-      }
-
-      const createdDepartment = (await response.json()) as Department
+      const createdDepartment = await api.post<Department>('/api/departments/', payload)
 
       setDepartments(current => {
         const next = [...current, createdDepartment].sort((a, b) => a.name.localeCompare(b.name))
@@ -309,8 +272,8 @@ const CeoDashboard = () => {
                     <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                     <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} unit="%" />
                     <Tooltip
-                      formatter={(value: number) => [`${Number(value).toFixed(1)}%`, 'Attendance Rate']}
-                      labelFormatter={(value: any) => `Week of ${String(value)}`}
+                      formatter={(value: number) => [`${value.toFixed(1)}%`, 'Attendance Rate']}
+                      labelFormatter={(value: string) => `Week of ${value}`}
                     />
                     <Line
                       type="monotone"
@@ -345,7 +308,7 @@ const CeoDashboard = () => {
         </p>
       </header>
 
-      <form className="grid grid-cols-[1.2fr_1fr_0.8fr_auto] gap-[0.6rem] bg-[var(--card)] text-[var(--card-foreground)] border border-[var(--border)] rounded-2xl p-[0.9rem]" onSubmit={handleCreate}>
+      <form className="grid grid-cols-[1.2fr_1fr_0.8fr_auto] gap-[0.6rem] bg-[var(--card)] text-[var(--card-foreground)] border border-[var(--border)] rounded-2xl p-[0.9rem]" onSubmit={(event) => void handleCreate(event)}>
         <input
           className="min-h-[40px] border border-[var(--border)] rounded-[10px] px-[0.7rem] bg-[var(--input-background)] text-[var(--foreground)]"
           value={name}
@@ -408,7 +371,8 @@ const CeoDashboard = () => {
       ) : (
         <section className="grid grid-cols-4 gap-4">
           {departments.map(dep => {
-            const Icon = iconMap[(dep.icon as keyof typeof iconMap) ?? 'Building2'] ?? FiHome
+            const iconName = dep.icon ?? 'Building2'
+            const Icon = iconName in iconMap ? iconMap[iconName as keyof typeof iconMap] : FiHome
             return (
               <article key={dep.id} className="bg-[var(--card)] text-[var(--card-foreground)] border border-[var(--border)] rounded-2xl p-4 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
@@ -418,7 +382,7 @@ const CeoDashboard = () => {
                   <button
                     type="button"
                     className="w-[34px] h-[34px] rounded-lg border border-[var(--border)] bg-transparent text-[var(--destructive)] grid place-items-center cursor-pointer hover:bg-[#d1353b14]"
-                    onClick={() => handleDelete(dep.id)}
+                    onClick={() => void handleDelete(dep.id)}
                     aria-label={`Delete ${dep.name}`}
                   >
                     <FiTrash2 />

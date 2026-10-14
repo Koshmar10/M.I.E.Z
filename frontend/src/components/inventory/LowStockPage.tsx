@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FiTruck, FiAlertTriangle, FiBox, FiCheckCircle } from 'react-icons/fi'
 import { useNavigate } from 'react-router-dom'
+import { api } from '../../api/client'
 
 type ApiProduct = {
   id: number
@@ -20,16 +21,16 @@ export default function LowStockPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    fetch('/api/inventory/products/?status=LOW&status=OUT', { credentials: 'include' })
-      .then(r => (r.ok ? r.json() : Promise.reject()))
-      .then(d => setProducts(d.results ?? d))
+    api
+      .get<ApiProduct[]>('/api/inventory/products/?status=LOW&status=OUT')
+      .then(setProducts)
       .catch(() => setProducts([]))
       .finally(() => setLoading(false))
   }, [])
 
   const openReceive = (p: ApiProduct) => {
     const params = new URLSearchParams({ productId: String(p.id), sku: p.sku, name: p.name })
-    navigate(`/inventory/receive-stock?${params.toString()}`)
+    void navigate(`/inventory/receive-stock?${params.toString()}`)
   }
 
   if (loading) return null

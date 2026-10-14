@@ -9,6 +9,7 @@ import { IoMdCheckmarkCircleOutline } from "react-icons/io";
 import { MdAccessTime } from "react-icons/md";
 import { FiAlertTriangle } from "react-icons/fi";
 import { useEffect, useMemo, useState } from "react";
+import { api, type Page } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 
@@ -129,18 +130,12 @@ const ItDashboard = () => {
   }, [user?.role]);
 
   useEffect(() => {
-    fetch("/api/it/dashboard/", { credentials: "include" })
-    .then((res) => {
-      if (!res.ok) {
-        throw new Error(`Stats request failed: ${res.status}`);
-      }
-      return res.json();
-    })
-    .then((data: ItStatsResponse) => {
+    api.get<ItStatsResponse>("/api/it/dashboard/")
+    .then((data) => {
       setStats(data);
       setLoadingStats(false);
     })
-    .catch((err) => {
+    .catch((err: unknown) => {
       console.error("Error fetching IT dashboard stats:", err);
       setLoadingStats(false);
     });
@@ -154,18 +149,12 @@ const ItDashboard = () => {
     }
 
     setLoadingTrend(true);
-    fetch("/api/it/ticket-trend/", { credentials: "include" })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`Trend request failed: ${res.status}`);
-        }
-        return res.json();
-      })
-      .then((data: { weeks?: TicketTrendWeek[] }) => {
+    api.get<{ weeks?: TicketTrendWeek[] }>("/api/it/ticket-trend/")
+      .then((data) => {
         setTicketTrend(Array.isArray(data.weeks) ? data.weeks : []);
         setLoadingTrend(false);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error("Error fetching IT ticket trend:", err);
         setTrendError("Could not load ticket trend.");
         setLoadingTrend(false);
@@ -182,18 +171,9 @@ const ItDashboard = () => {
         const allTickets: TicketItem[] = [];
 
         while (nextUrl) {
-          const response = await fetch(nextUrl, {
-            credentials: "include",
-          });
-
-          if (!response.ok) {
-            throw new Error(`Ticket request failed: ${response.status}`);
-          }
-
-          const data = await response.json();
-          const pageItems = Array.isArray(data.results) ? (data.results as TicketItem[]) : [];
-          allTickets.push(...pageItems);
-          nextUrl = typeof data.next === "string" ? new URL(data.next).pathname + new URL(data.next).search : null;
+          const data: Page<TicketItem> = await api.get<Page<TicketItem>>(nextUrl);
+          allTickets.push(...data.results);
+          nextUrl = data.next;
         }
 
         setTickets(allTickets);
@@ -205,7 +185,7 @@ const ItDashboard = () => {
       }
     };
 
-    fetchAllTickets();
+    void fetchAllTickets();
   }, []);
 
   useEffect(() => {
@@ -221,15 +201,7 @@ const ItDashboard = () => {
         setLoadingTechnicianStats(true);
         setTechnicianStatsError("");
 
-        const response = await fetch(`/api/it/technician-stats/?days=${technicianWindow}`, {
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          throw new Error(`Technician stats request failed: ${response.status}`);
-        }
-
-        const data = await response.json() as { technicians?: TechnicianStat[] };
+        const data = await api.get<{ technicians?: TechnicianStat[] }>("/api/it/technician-stats/", { days: technicianWindow });
         setTechnicianStats(Array.isArray(data.technicians) ? data.technicians : []);
       } catch (error) {
         console.error("Error fetching technician stats:", error);
@@ -239,7 +211,7 @@ const ItDashboard = () => {
       }
     };
 
-    fetchTechnicianStats();
+    void fetchTechnicianStats();
   }, [technicianWindow, user?.role]);
 
   useEffect(() => {
@@ -262,18 +234,9 @@ const ItDashboard = () => {
         setLoadingAssetSummary(true);
         setAssetSummaryError("");
 
-        const response = await fetch("/api/it/assets/", {
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          throw new Error(`Asset summary request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const assets = (Array.isArray(data) ? data : Array.isArray(data.results) ? data.results : []) as AssetItem[];
+        const assets = await api.get<AssetItem[]>("/api/it/assets/");
         const recentAssets = [...assets]
-          .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))
           .slice(0, 5)
           .map((asset: AssetItem) => ({
             id: asset.id,
@@ -298,7 +261,7 @@ const ItDashboard = () => {
       }
     };
 
-    fetchAssetSummary();
+    void fetchAssetSummary();
   }, [user?.role]);
 
   const technicianChartData = useMemo(() => {
@@ -461,7 +424,7 @@ const ItDashboard = () => {
               </div>
               <button
                 type="button"
-                onClick={() => navigate("/it/assets")}
+                onClick={() => void navigate("/it/assets")}
                 className="rounded-lg border border-[var(--border)] bg-[var(--input-background)] px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--card)]"
               >
                 Open Assets

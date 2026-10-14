@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiUser, FiLock, FiMail, FiShield, FiBriefcase, FiCheck, FiAlertCircle } from 'react-icons/fi';
+import { authApi } from '../../api/auth';
+import { api, errorMessage } from '../../api/client';
 
 export default function SettingsPage() {
   const [profileData, setProfileData] = useState({
@@ -28,59 +30,46 @@ export default function SettingsPage() {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const res = await fetch('/api/auth/me/', { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          setProfileData({
-            first_name: data.first_name || '',
-            last_name: data.last_name || '',
-            phone: data.phone || '',
-            address: data.address || '',
-            email: data.email || '',
-            role: data.role || '',
-            department_name: data.department_name || 'N/A'
-          });
-        }
+        const data = await authApi.me();
+        setProfileData({
+          first_name: data.first_name,
+          last_name: data.last_name,
+          phone: data.phone,
+          address: data.address,
+          email: data.email,
+          role: data.role,
+          department_name: data.department_name ?? 'N/A'
+        });
       } catch (err) {
         console.error('Failed to load profile', err);
       } finally {
         setLoading(false);
       }
     };
-    fetchProfile();
+    void fetchProfile();
   }, []);
 
-  const handleProfileSubmit = async (e: React.FormEvent) => {
+  const handleProfileSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSavingProfile(true);
     setProfileStatus({ type: '', message: '' });
 
     try {
-      const res = await fetch('/api/auth/me/', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          first_name: profileData.first_name,
-          last_name: profileData.last_name,
-          phone: profileData.phone,
-          address: profileData.address
-        })
+      await api.patch('/api/auth/me/', {
+        first_name: profileData.first_name,
+        last_name: profileData.last_name,
+        phone: profileData.phone,
+        address: profileData.address
       });
-      const data = await res.json();
-
-      if (res.ok) {
-        setProfileStatus({ type: 'success', message: 'Profile updated successfully!' });
-      } else {
-        setProfileStatus({ type: 'error', message: data.detail || 'Failed to update profile.' });
-      }
+      setProfileStatus({ type: 'success', message: 'Profile updated successfully!' });
     } catch (err) {
-      setProfileStatus({ type: 'error', message: 'Network error occurred.' });
+      setProfileStatus({ type: 'error', message: errorMessage(err, 'Failed to update profile.') });
     } finally {
       setSavingProfile(false);
     }
   };
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setPasswordStatus({ type: '', message: '' });
 
@@ -96,24 +85,14 @@ export default function SettingsPage() {
 
     setSavingPassword(true);
     try {
-      const res = await fetch('/api/auth/change-password/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          current_password: passwordData.current_password,
-          new_password: passwordData.new_password
-        })
+      await api.post('/api/auth/change-password/', {
+        current_password: passwordData.current_password,
+        new_password: passwordData.new_password
       });
-
-      const data = await res.json();
-      if (res.ok) {
-        setPasswordStatus({ type: 'success', message: 'Password changed successfully!' });
-        setPasswordData({ current_password: '', new_password: '', confirm_password: '' });
-      } else {
-        setPasswordStatus({ type: 'error', message: data.detail || 'Failed to change password.' });
-      }
+      setPasswordStatus({ type: 'success', message: 'Password changed successfully!' });
+      setPasswordData({ current_password: '', new_password: '', confirm_password: '' });
     } catch (err) {
-      setPasswordStatus({ type: 'error', message: 'Network error occurred.' });
+      setPasswordStatus({ type: 'error', message: errorMessage(err, 'Failed to change password.') });
     } finally {
       setSavingPassword(false);
     }
@@ -157,7 +136,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <form onSubmit={handleProfileSubmit} className="space-y-5">
+            <form onSubmit={(e) => void handleProfileSubmit(e)} className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">First Name</label>
@@ -227,7 +206,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <form onSubmit={handlePasswordSubmit} className="space-y-5">
+            <form onSubmit={(e) => void handlePasswordSubmit(e)} className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Current Password</label>
                 <input

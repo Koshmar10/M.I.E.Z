@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FiAlertTriangle, FiXCircle } from 'react-icons/fi'
+import { api } from '../../api/client'
 
 type InventoryKpiResponse = {
   total_products: number
@@ -32,21 +33,10 @@ const CeoInventorySummary = () => {
         setLoading(true)
         setError('')
 
-        const [kpiRes, criticalRes] = await Promise.all([
-          fetch('/api/inventory/dashboard/', { credentials: 'include' }),
-          fetch('/api/inventory/products/?status=LOW&status=OUT', { credentials: 'include' }),
+        const [kpiData, list] = await Promise.all([
+          api.get<InventoryKpiResponse>('/api/inventory/dashboard/'),
+          api.get<CriticalProduct[]>('/api/inventory/products/?status=LOW&status=OUT'),
         ])
-
-        if (!kpiRes.ok) throw new Error(`Inventory KPIs failed: ${kpiRes.status}`)
-        if (!criticalRes.ok) throw new Error(`Critical inventory failed: ${criticalRes.status}`)
-
-        const kpiData = (await kpiRes.json()) as InventoryKpiResponse
-        const criticalData = await criticalRes.json()
-        const list = Array.isArray(criticalData)
-          ? (criticalData as CriticalProduct[])
-          : Array.isArray(criticalData?.results)
-            ? (criticalData.results as CriticalProduct[])
-            : []
 
         setKpis(kpiData)
         setCritical(list)
@@ -58,7 +48,7 @@ const CeoInventorySummary = () => {
       }
     }
 
-    load()
+    void load()
   }, [])
 
   const kpiTiles = useMemo(() => {

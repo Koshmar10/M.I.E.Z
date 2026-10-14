@@ -5,15 +5,6 @@ import ItDashboard from '../it/ItDashboard'
 import SalesDashboard from '../sales/SalesDashboard'
 import InventoryDashboard from '../inventory/InventoryDashboard'
 
-const EmployeeDashboard = () => {
-  return (
-    <section className="bg-[var(--card)] text-[var(--card-foreground)] border border-[var(--border)] rounded-2xl p-5">
-      <h2 className="text-lg font-semibold">Employee Dashboard</h2>
-      <p className="text-sm text-black/60 mt-1">Welcome to your employee dashboard.</p>
-    </section>
-  )
-}
-
 const DashboardPage = () => {
   const { user } = useAuth()
 
@@ -36,8 +27,6 @@ const DashboardPage = () => {
       return <SalesDashboard />
     case 'INVENTORY':
       return <InventoryDashboard />
-    case 'EMPLOYEE':
-      return <EmployeeDashboard />
     default:
       return (
         <section className="bg-[var(--card)] text-[var(--card-foreground)] border border-[var(--border)] rounded-2xl p-5">

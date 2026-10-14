@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { api, errorMessage } from '../../api/client'
 
 type InvoiceRow = {
   id: number
@@ -137,20 +138,14 @@ const SalesInvoicesPage = () => {
         params.set('page_size', '20')
         if (statusFilter) params.set('status', statusFilter)
 
-        const response = await fetch(`/api/invoices/?${params.toString()}`, {
-          credentials: 'include',
-        })
-
-        if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
-
-        const data = (await response.json()) as InvoiceListResponse
-        setInvoices(Array.isArray(data.results) ? data.results : [])
-        setTotalCount(data.count ?? 0)
-        setNextPageUrl(data.next ?? null)
-        setPreviousPageUrl(data.previous ?? null)
-        setPaidTotal(data.paid_total ?? '0.00')
-        setPendingTotal(data.pending_total ?? '0.00')
-        setOverdueTotal(data.overdue_total ?? '0.00')
+        const data = await api.get<InvoiceListResponse>(`/api/invoices/?${params.toString()}`)
+        setInvoices(data.results)
+        setTotalCount(data.count)
+        setNextPageUrl(data.next)
+        setPreviousPageUrl(data.previous)
+        setPaidTotal(data.paid_total)
+        setPendingTotal(data.pending_total)
+        setOverdueTotal(data.overdue_total)
       } catch (err) {
         console.error('Failed to load invoices:', err)
         setError('Could not load invoices right now.')
@@ -159,7 +154,7 @@ const SalesInvoicesPage = () => {
       }
     }
 
-    loadInvoices()
+    void loadInvoices()
   }, [statusFilter, page])
 
   const openInvoiceDetail = async (invoiceId: number) => {
@@ -169,16 +164,7 @@ const SalesInvoicesPage = () => {
       setDetailError('')
       setSelectedInvoice(null)
 
-      const response = await fetch(`/api/invoices/${invoiceId}/`, {
-        credentials: 'include',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Invoice detail request failed with status ${response.status}`)
-      }
-
-      const detail = (await response.json()) as InvoiceDetail
-      setSelectedInvoice(detail)
+      setSelectedInvoice(await api.get<InvoiceDetail>(`/api/invoices/${invoiceId}/`))
     } catch (err) {
       console.error('Failed to load invoice detail:', err)
       setDetailError('Could not load invoice details.')
@@ -200,21 +186,7 @@ const SalesInvoicesPage = () => {
 
     try {
       setMarkingPaid(true)
-      const response = await fetch(`/api/invoices/${selectedInvoice.id}/`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ status: 'PAID' }),
-      })
-
-      if (!response.ok) {
-        const message = await response.text()
-        throw new Error(message || `Invoice update failed with status ${response.status}`)
-      }
-
-      const updated = (await response.json()) as InvoiceDetail
+      const updated = await api.patch<InvoiceDetail>(`/api/invoices/${selectedInvoice.id}/`, { status: 'PAID' })
       setSelectedInvoice(updated)
       setInvoices((prev) =>
         prev.map((row) =>
@@ -229,7 +201,7 @@ const SalesInvoicesPage = () => {
       )
     } catch (err) {
       console.error('Failed to mark invoice paid:', err)
-      setDetailError('Could not update invoice status.')
+      setDetailError(errorMessage(err, 'Could not update invoice status.'))
     } finally {
       setMarkingPaid(false)
     }
@@ -306,7 +278,7 @@ const SalesInvoicesPage = () => {
                     <tr
                       key={invoice.id}
                       className="border-t border-[var(--border)] hover:bg-[var(--muted)]/40 transition-colors cursor-pointer"
-                      onClick={() => openInvoiceDetail(invoice.id)}
+                      onClick={() => void openInvoiceDetail(invoice.id)}
                     >
                       <td className="px-5 py-3 font-semibold font-mono text-[0.8rem]">{invoice.invoice_number}</td>
                       <td className="px-5 py-3 text-[var(--muted-foreground)] font-mono text-[0.8rem]">{invoice.order_number}</td>
@@ -404,7 +376,7 @@ const SalesInvoicesPage = () => {
               {selectedInvoice.status !== 'PAID' && (
                 <button
                   type="button"
-                  onClick={markInvoicePaid}
+                  onClick={() => void markInvoicePaid()}
                   disabled={markingPaid}
                   className="h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >

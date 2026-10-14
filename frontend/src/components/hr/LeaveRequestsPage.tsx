@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FiCheck, FiClock, FiX } from 'react-icons/fi'
+import { api } from '../../api/client'
 
 type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 type LeaveType = 'VACATION' | 'SICK' | 'UNPAID'
@@ -74,12 +75,7 @@ export default function LeaveRequestsPage() {
     const loadRequests = async () => {
       setLoading(true)
       try {
-        const response = await fetch('/api/leave-requests/', { credentials: 'include' })
-        if (!response.ok) {
-          throw new Error(`Failed to load leave requests: ${response.status}`)
-        }
-
-        const data = (await response.json()) as LeaveRequest[]
+        const data = await api.get<LeaveRequest[]>('/api/leave-requests/')
         setRequests(Array.isArray(data) ? data : [])
       } catch (error) {
         console.error('Failed to load leave requests', error)
@@ -89,7 +85,7 @@ export default function LeaveRequestsPage() {
       }
     }
 
-    loadRequests()
+    void loadRequests()
   }, [])
 
   const filteredRequests = useMemo(() => {
@@ -116,20 +112,7 @@ export default function LeaveRequestsPage() {
 
     setUpdatingId(id)
     try {
-      const response = await fetch(`/api/leave-requests/${id}/${nextStatus}/`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-      })
-
-      if (!response.ok) {
-        throw new Error(`Failed to ${nextStatus} request: ${response.status}`)
-      }
-
-      const payload = (await response.json()) as { id: number; status: LeaveStatus }
+      const payload = await api.patch<{ id: number; status: LeaveStatus }>(`/api/leave-requests/${id}/${nextStatus}/`, {})
 
       setRequests(current =>
         current.map(request =>
@@ -235,7 +218,7 @@ export default function LeaveRequestsPage() {
                             <button
                               type="button"
                               disabled={updatingId === request.id}
-                              onClick={() => updateRequestStatus(request.id, 'approve')}
+                              onClick={() => void updateRequestStatus(request.id, 'approve')}
                               className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <FiCheck className="h-3.5 w-3.5" />
@@ -244,7 +227,7 @@ export default function LeaveRequestsPage() {
                             <button
                               type="button"
                               disabled={updatingId === request.id}
-                              onClick={() => updateRequestStatus(request.id, 'reject')}
+                              onClick={() => void updateRequestStatus(request.id, 'reject')}
                               className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <FiX className="h-3.5 w-3.5" />

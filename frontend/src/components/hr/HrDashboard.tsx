@@ -1,6 +1,7 @@
 import React from 'react'
 import { FiUsers, FiCalendar, FiBriefcase, FiTrendingUp, FiZap, FiCheckCircle, FiAlertTriangle } from 'react-icons/fi'
 import { CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from 'recharts'
+import { api, errorMessage, type Page } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 import UpcomingEventsWidget from './UpcomingEventsWidget'
 import Markdown from '../common/Markdown'
@@ -29,10 +30,17 @@ type AgentReport = {
     content: string
     tool_calls: number
     summary_line?: string
-    critical?: any[]
-    warning?: any[]
-    info?: any[]
+    critical?: DigestInsight[]
+    warning?: DigestInsight[]
+    info?: DigestInsight[]
   } | null
+}
+
+/** One finding in the HR digest (see DigestGenerator in the backend). */
+type DigestInsight = {
+  title: string
+  description: string
+  suggested_action: string
 }
 
 type Tab = 'overview' | 'agent-reports'
@@ -107,9 +115,8 @@ const HrDashboard = () => {
 
   const fetchReports = React.useCallback(() => {
     setLoadingReports(true)
-    fetch('/api/reports/?category=HR', { credentials: 'include' })
-      .then(r => r.json())
-      .then((data: AgentReport[]) => setAgentReports(Array.isArray(data) ? data : []))
+    api.get<AgentReport[]>('/api/reports/', { category: 'HR' })
+      .then(setAgentReports)
       .catch(() => setAgentReports([]))
       .finally(() => setLoadingReports(false))
   }, [])
@@ -118,12 +125,9 @@ const HrDashboard = () => {
 
   const fetchLatestDigest = React.useCallback(() => {
     if (!isCeo && !isHr) return
-    fetch('/api/hr/latest-digest/', { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) setLatestDigest(data)
-      })
-      .catch(console.error)
+    api.get<AgentReport>('/api/hr/latest-digest/')
+      .then(setLatestDigest)
+      .catch(() => undefined) // 404 until a first digest exists
   }, [isCeo, isHr])
 
   React.useEffect(() => {
@@ -132,9 +136,8 @@ const HrDashboard = () => {
 
   // KPIs
   React.useEffect(() => {
-    fetch('/api/hr/dashboard/', { credentials: 'include' })
-      .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json() })
-      .then((data: HrKpiResponse) => setKpis(data))
+    api.get<HrKpiResponse>('/api/hr/dashboard/')
+      .then(setKpis)
       .catch(() => setKpisError('Could not load HR KPI data.'))
       .finally(() => setLoadingKpis(false))
   }, [])
@@ -143,9 +146,8 @@ const HrDashboard = () => {
   React.useEffect(() => {
     if (!isCeo) return
     setLoadingSummary(true)
-    fetch('/api/hr/ceo-summary/', { credentials: 'include' })
-      .then(r => r.json())
-      .then((data: CeoSummaryResponse) => setCeoSummary(data))
+    api.get<CeoSummaryResponse>('/api/hr/ceo-summary/')
+      .then(setCeoSummary)
       .catch(console.error)
       .finally(() => setLoadingSummary(false))
   }, [isCeo])
@@ -154,9 +156,8 @@ const HrDashboard = () => {
   React.useEffect(() => {
     if (!isCeo) return
     setLoadingEmployees(true)
-    fetch('/api/employees/?page_size=50', { credentials: 'include' })
-      .then(r => r.json())
-      .then(data => setEmployees(Array.isArray(data.results) ? data.results : Array.isArray(data) ? data : []))
+    api.get<Page<Employee>>('/api/employees/', { page_size: 50 })
+      .then(data => setEmployees(data.results))
       .catch(() => setEmployeesError('Could not load employees.'))
       .finally(() => setLoadingEmployees(false))
   }, [isCeo])
@@ -172,36 +173,22 @@ const HrDashboard = () => {
       setTriggerError('')
       const triggerTime = Date.now()
       
-      const res = await fetch('/api/hr/run-insights-agent/', {
-        method: 'POST',
-        credentials: 'include',
-      })
-      
-      if (!res.ok) {
-        if (res.status === 429) throw new Error('Rate limit exceeded: max 3 manual triggers per day.')
-        throw new Error('Failed to trigger agent')
-      }
-      
+      await api.post('/api/hr/run-insights-agent/')
+
       setIsPolling(true)
-      
-      const pollInterval = setInterval(async () => {
-        try {
-          const pollRes = await fetch('/api/hr/latest-digest/', { credentials: 'include' })
-          if (pollRes.ok) {
-            const data = await pollRes.json()
-            if (data && data.generated_at) {
-              const genTime = new Date(data.generated_at).getTime()
-              if (genTime > triggerTime) {
-                clearInterval(pollInterval)
-                setIsPolling(false)
-                fetchReports()
-                fetchLatestDigest()
-              }
+
+      // Wait for a digest newer than the trigger; the agent runs in the background.
+      const pollInterval = setInterval(() => {
+        api.get<AgentReport>('/api/hr/latest-digest/')
+          .then(data => {
+            if (data.generated_at && new Date(data.generated_at).getTime() > triggerTime) {
+              clearInterval(pollInterval)
+              setIsPolling(false)
+              fetchReports()
+              fetchLatestDigest()
             }
-          }
-        } catch (e) {
-          console.error('Polling error', e)
-        }
+          })
+          .catch(() => undefined) // no digest yet
       }, 3000)
       
       // Safety timeout after 2 minutes
@@ -210,8 +197,8 @@ const HrDashboard = () => {
         setIsPolling(false)
       }, 120000)
       
-    } catch (e: any) {
-      setTriggerError(e.message || 'Error triggering agent')
+    } catch (e) {
+      setTriggerError(errorMessage(e, 'Error triggering agent'))
       setIsPolling(false)
     }
   }
@@ -274,7 +261,7 @@ const HrDashboard = () => {
             </div>
             {(isCeo || isHr) && (
               <button
-                onClick={triggerAgent}
+                onClick={() => void triggerAgent()}
                 disabled={isPolling}
                 className="shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
               >
@@ -356,9 +343,8 @@ const HrDashboard = () => {
               </p>
 
               {(() => {
-                const data = latestDigest.digest_data as any;
-                const critical: any[] = Array.isArray(data.critical) ? data.critical : [];
-                const warning: any[] = Array.isArray(data.warning) ? data.warning : [];
+                const critical = latestDigest.digest_data.critical ?? [];
+                const warning = latestDigest.digest_data.warning ?? [];
 
                 if (critical.length === 0 && warning.length === 0) {
                   return (
@@ -372,8 +358,8 @@ const HrDashboard = () => {
                 }
 
                 const itemsToShow = [
-                  ...critical.map((c: any) => ({...c, level: 'CRITICAL'})), 
-                  ...warning.map((w: any) => ({...w, level: 'WARNING'}))
+                  ...critical.map(c => ({ ...c, level: 'CRITICAL' as const })),
+                  ...warning.map(w => ({ ...w, level: 'WARNING' as const })),
                 ].slice(0, 2);
 
                 return (
@@ -579,7 +565,7 @@ const HrDashboard = () => {
                           {emp.role}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-sm text-[var(--muted-foreground)]">{emp.employment_type?.replace('_', ' ') ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-sm text-[var(--muted-foreground)]">{emp.employment_type.replace('_', ' ')}</td>
                       <td className="px-4 py-2.5 text-sm text-[var(--muted-foreground)]">{formatDate(emp.start_date)}</td>
                     </tr>
                   ))}

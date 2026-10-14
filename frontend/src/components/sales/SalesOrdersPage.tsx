@@ -160,11 +160,11 @@ const SalesOrdersPage = () => {
         }
 
         const data = await api.get<OrderListResponse>(`/api/orders/?${params.toString()}`)
-        setOrders(Array.isArray(data.results) ? data.results : [])
-        setTotalCount(data.total_count ?? 0)
-        setTotalRonSum(data.total_ron_sum ?? '0')
-        setNextPageUrl(data.next ?? null)
-        setPreviousPageUrl(data.previous ?? null)
+        setOrders(data.results)
+        setTotalCount(data.total_count)
+        setTotalRonSum(data.total_ron_sum)
+        setNextPageUrl(data.next)
+        setPreviousPageUrl(data.previous)
       } catch (error) {
         console.error('Failed to load orders list:', error)
         setOrdersError('Could not load orders right now.')
@@ -173,7 +173,7 @@ const SalesOrdersPage = () => {
       }
     }
 
-    loadOrders()
+    void loadOrders()
   }, [search, statusFilter, channelFilter, page])
 
   const openOrderDetail = async (orderId: number) => {
@@ -347,7 +347,7 @@ const SalesOrdersPage = () => {
                     <tr
                       key={order.id}
                       className="bg-white border border-[var(--border)] cursor-pointer hover:bg-black/[0.02]"
-                      onClick={() => openOrderDetail(order.id)}
+                      onClick={() => void openOrderDetail(order.id)}
                     >
                       <td className="px-3 py-2 text-sm font-semibold">{order.order_number}</td>
                       <td className="px-3 py-2 text-sm">{order.customer_name}</td>
@@ -447,7 +447,7 @@ const SalesOrdersPage = () => {
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={saveStatusUpdate}
+                            onClick={() => void saveStatusUpdate()}
                             disabled={statusSaving || statusDraft === selectedOrder.status}
                             className="rounded-lg border border-[var(--border)] bg-black text-white px-3 py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                           >

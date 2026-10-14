@@ -135,7 +135,7 @@ const ItDashboard = () => {
       setStats(data);
       setLoadingStats(false);
     })
-    .catch((err) => {
+    .catch((err: unknown) => {
       console.error("Error fetching IT dashboard stats:", err);
       setLoadingStats(false);
     });
@@ -154,7 +154,7 @@ const ItDashboard = () => {
         setTicketTrend(Array.isArray(data.weeks) ? data.weeks : []);
         setLoadingTrend(false);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error("Error fetching IT ticket trend:", err);
         setTrendError("Could not load ticket trend.");
         setLoadingTrend(false);
@@ -185,7 +185,7 @@ const ItDashboard = () => {
       }
     };
 
-    fetchAllTickets();
+    void fetchAllTickets();
   }, []);
 
   useEffect(() => {
@@ -211,7 +211,7 @@ const ItDashboard = () => {
       }
     };
 
-    fetchTechnicianStats();
+    void fetchTechnicianStats();
   }, [technicianWindow, user?.role]);
 
   useEffect(() => {
@@ -236,7 +236,7 @@ const ItDashboard = () => {
 
         const assets = await api.get<AssetItem[]>("/api/it/assets/");
         const recentAssets = [...assets]
-          .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))
           .slice(0, 5)
           .map((asset: AssetItem) => ({
             id: asset.id,
@@ -261,7 +261,7 @@ const ItDashboard = () => {
       }
     };
 
-    fetchAssetSummary();
+    void fetchAssetSummary();
   }, [user?.role]);
 
   const technicianChartData = useMemo(() => {
@@ -424,7 +424,7 @@ const ItDashboard = () => {
               </div>
               <button
                 type="button"
-                onClick={() => navigate("/it/assets")}
+                onClick={() => void navigate("/it/assets")}
                 className="rounded-lg border border-[var(--border)] bg-[var(--input-background)] px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--card)]"
               >
                 Open Assets

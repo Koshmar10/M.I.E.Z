@@ -139,13 +139,13 @@ const SalesInvoicesPage = () => {
         if (statusFilter) params.set('status', statusFilter)
 
         const data = await api.get<InvoiceListResponse>(`/api/invoices/?${params.toString()}`)
-        setInvoices(Array.isArray(data.results) ? data.results : [])
-        setTotalCount(data.count ?? 0)
-        setNextPageUrl(data.next ?? null)
-        setPreviousPageUrl(data.previous ?? null)
-        setPaidTotal(data.paid_total ?? '0.00')
-        setPendingTotal(data.pending_total ?? '0.00')
-        setOverdueTotal(data.overdue_total ?? '0.00')
+        setInvoices(data.results)
+        setTotalCount(data.count)
+        setNextPageUrl(data.next)
+        setPreviousPageUrl(data.previous)
+        setPaidTotal(data.paid_total)
+        setPendingTotal(data.pending_total)
+        setOverdueTotal(data.overdue_total)
       } catch (err) {
         console.error('Failed to load invoices:', err)
         setError('Could not load invoices right now.')
@@ -154,7 +154,7 @@ const SalesInvoicesPage = () => {
       }
     }
 
-    loadInvoices()
+    void loadInvoices()
   }, [statusFilter, page])
 
   const openInvoiceDetail = async (invoiceId: number) => {
@@ -278,7 +278,7 @@ const SalesInvoicesPage = () => {
                     <tr
                       key={invoice.id}
                       className="border-t border-[var(--border)] hover:bg-[var(--muted)]/40 transition-colors cursor-pointer"
-                      onClick={() => openInvoiceDetail(invoice.id)}
+                      onClick={() => void openInvoiceDetail(invoice.id)}
                     >
                       <td className="px-5 py-3 font-semibold font-mono text-[0.8rem]">{invoice.invoice_number}</td>
                       <td className="px-5 py-3 text-[var(--muted-foreground)] font-mono text-[0.8rem]">{invoice.order_number}</td>
@@ -376,7 +376,7 @@ const SalesInvoicesPage = () => {
               {selectedInvoice.status !== 'PAID' && (
                 <button
                   type="button"
-                  onClick={markInvoicePaid}
+                  onClick={() => void markInvoicePaid()}
                   disabled={markingPaid}
                   className="h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >

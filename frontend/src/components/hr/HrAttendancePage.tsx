@@ -103,7 +103,7 @@ const HrAttendancePage = () => {
         setIsLoading(false)
       }
     }
-    load()
+    void load()
   }, [selectedWeekStart])
 
   const dayInfo = useMemo(

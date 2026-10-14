@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api, fieldErrors } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
@@ -106,13 +106,13 @@ const EmployeesPage = () => {
 
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [formData, setFormData] = useState<EmployeeFormData>(initialFormData)
-  const [formErrors, setFormErrors] = useState<Record<string, string[]>>({})
+  const [formErrors, setFormErrors] = useState<Partial<Record<string, string[]>>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const canCreateEmployees = user?.role === 'CEO' || user?.role === 'HR'
   const detailRouteBase = location.pathname.startsWith('/employees') ? '/employees' : '/hr/employees'
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = useCallback(async () => {
     setIsLoading(true)
     try {
       const params = new URLSearchParams({ page: String(page) })
@@ -134,7 +134,7 @@ const EmployeesPage = () => {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [page, departmentFilter, debouncedSearch])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -146,8 +146,8 @@ const EmployeesPage = () => {
   }, [searchTerm])
 
   useEffect(() => {
-    fetchEmployees()
-  }, [page, departmentFilter, debouncedSearch])
+    void fetchEmployees()
+  }, [fetchEmployees])
 
   useEffect(() => {
     const fetchDepartments = async () => {
@@ -159,7 +159,7 @@ const EmployeesPage = () => {
       }
     }
 
-    fetchDepartments()
+    void fetchDepartments()
   }, [])
 
   useEffect(() => {
@@ -177,7 +177,7 @@ const EmployeesPage = () => {
     }))
   }
 
-  const handleCreateEmployee = async (event: FormEvent<HTMLFormElement>) => {
+  const handleCreateEmployee = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault()
     setIsSubmitting(true)
     setFormErrors({})
@@ -236,7 +236,7 @@ const EmployeesPage = () => {
         <section className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4">
           <h3 className="text-[1rem] font-semibold mb-3">Create employee profile</h3>
 
-          <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleCreateEmployee}>
+          <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={(event) => void handleCreateEmployee(event)}>
             <input className="min-h-[40px] border border-[var(--border)] rounded-[10px] px-[0.7rem] bg-[var(--card)] text-[var(--card-foreground)]" value={formData.first_name} onChange={event => handleFormChange('first_name', event.target.value)} placeholder="First name" required />
             <input className="min-h-[40px] border border-[var(--border)] rounded-[10px] px-[0.7rem] bg-[var(--card)] text-[var(--card-foreground)]" value={formData.last_name} onChange={event => handleFormChange('last_name', event.target.value)} placeholder="Last name" required />
             <input className="min-h-[40px] border border-[var(--border)] rounded-[10px] px-[0.7rem] bg-[var(--card)] text-[var(--card-foreground)]" type="email" value={formData.email} onChange={event => handleFormChange('email', event.target.value)} placeholder="Email" required />
@@ -357,7 +357,7 @@ const EmployeesPage = () => {
                   <tr
                     key={employee.id}
                     className="cursor-pointer hover:bg-black/5 transition-colors"
-                    onClick={() => navigate(`${detailRouteBase}/${employee.id}`)}
+                    onClick={() => void navigate(`${detailRouteBase}/${employee.id}`)}
                   >
                     <td className="px-4 py-3 border-b border-[var(--border)]">
                       <div className="flex items-center gap-3">

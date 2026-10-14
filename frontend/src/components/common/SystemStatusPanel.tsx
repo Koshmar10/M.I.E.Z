@@ -38,7 +38,7 @@ const SystemStatusPanel: React.FC<SystemStatusPanelProps> = ({
       }
     }
 
-    fetchSystemStatus()
+    void fetchSystemStatus()
     const interval = setInterval(fetchSystemStatus, pollInterval)
     return () => clearInterval(interval)
   }, [pollInterval])

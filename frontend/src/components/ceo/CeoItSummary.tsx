@@ -54,7 +54,7 @@ const CeoItSummary = () => {
       }
     }
 
-    load()
+    void load()
   }, [])
 
   const kpis = useMemo(() => {

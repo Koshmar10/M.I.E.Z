@@ -89,10 +89,10 @@ const SalesProductsPage = () => {
         if (categoryFilter) params.set('category', categoryFilter)
 
         const data = await api.get<ProductListResponse>(`/api/products/?${params.toString()}`)
-        setProducts(Array.isArray(data.results) ? data.results : [])
-        setTotalCount(data.total_count ?? data.count ?? 0)
-        setNextPageUrl(data.next ?? null)
-        setPreviousPageUrl(data.previous ?? null)
+        setProducts(data.results)
+        setTotalCount(data.total_count)
+        setNextPageUrl(data.next)
+        setPreviousPageUrl(data.previous)
       } catch (err) {
         console.error('Failed to load products:', err)
         setError('Could not load products right now.')
@@ -101,7 +101,7 @@ const SalesProductsPage = () => {
       }
     }
 
-    loadProducts()
+    void loadProducts()
   }, [search, categoryFilter, page])
 
   return (

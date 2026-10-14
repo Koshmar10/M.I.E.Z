@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { IconType } from 'react-icons'
 import { FiArrowDownLeft, FiArrowUpRight, FiRefreshCw, FiTrash2, FiBox, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import { useNavigate } from 'react-router-dom'
 import { api, type Page } from '../../api/client'
@@ -20,7 +21,7 @@ type Movement = {
   created_at: string
 }
 
-type TypeConfig = { icon: React.ComponentType<any>; label: string; dot: string; qty: string }
+type TypeConfig = { icon: IconType; label: string; dot: string; qty: string }
 
 const typeConfig: Record<string, TypeConfig> = {
   INBOUND:    { icon: FiArrowDownLeft, label: 'Inbound',    dot: 'bg-emerald-500', qty: 'text-emerald-600' },
@@ -59,11 +60,12 @@ export default function StockMovementsPage() {
     }
   }
 
-  useEffect(() => { fetchData(page) }, [page]) // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- filters apply only when "Apply" is clicked, not while typing
+  useEffect(() => { void fetchData(page) }, [page])
 
   const handleReceive = (prod?: { id: number; name: string; sku: string }) => {
     if (!prod) return
-    navigate(`/inventory/receive?${new URLSearchParams({ productId: String(prod.id), sku: prod.sku ?? '', name: prod.name ?? '' })}`)
+    void navigate(`/inventory/receive?${new URLSearchParams({ productId: String(prod.id), sku: prod.sku, name: prod.name }).toString()}`)
   }
 
   const hasFilters = typeFilter !== 'ALL' || !!dateFrom || !!dateTo
@@ -105,14 +107,14 @@ export default function StockMovementsPage() {
             className="h-9 px-3 text-[0.875rem] rounded-lg border border-[var(--border)] bg-[var(--input-background)] text-[var(--card-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
           />
           <button
-            onClick={() => { setPage(1); fetchData(1) }}
+            onClick={() => { setPage(1); void fetchData(1) }}
             className="h-9 px-4 text-[0.875rem] font-semibold rounded-lg bg-[var(--primary)] text-white hover:opacity-90 transition-opacity"
           >
             Apply
           </button>
           {hasFilters && (
             <button
-              onClick={() => { setTypeFilter('ALL'); setDateFrom(''); setDateTo(''); setPage(1); fetchData(1) }}
+              onClick={() => { setTypeFilter('ALL'); setDateFrom(''); setDateTo(''); setPage(1); void fetchData(1) }}
               className="h-9 px-3 text-[0.875rem] text-[var(--muted-foreground)] hover:text-[var(--card-foreground)] border border-[var(--border)] rounded-lg transition-colors"
             >
               Reset
@@ -157,7 +159,7 @@ export default function StockMovementsPage() {
               </thead>
               <tbody>
                 {movements.map(m => {
-                  const t = (m.movement_type ?? '').toUpperCase()
+                  const t = m.movement_type.toUpperCase()
                   const cfg = typeConfig[t] ?? { icon: FiBox, label: t, dot: 'bg-slate-400', qty: '' }
                   const Icon = cfg.icon
                   const prodName = m.product_name ?? m.product_obj?.name ?? 'Unknown'

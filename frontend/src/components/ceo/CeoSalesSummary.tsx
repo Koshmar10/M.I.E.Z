@@ -73,7 +73,7 @@ const CeoSalesSummary = () => {
       }
     }
 
-    load()
+    void load()
   }, [])
 
   const kpiTiles = useMemo(() => {

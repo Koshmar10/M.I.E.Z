@@ -81,7 +81,7 @@ const CeoDashboard = () => {
       }
     }
 
-    fetchDepartments()
+    void fetchDepartments()
   }, [user?.role])
 
   useEffect(() => {
@@ -105,7 +105,7 @@ const CeoDashboard = () => {
       }
     }
 
-    fetchHrSummary()
+    void fetchHrSummary()
   }, [user?.role])
 
   const attendanceChartData = useMemo(() => {
@@ -143,7 +143,7 @@ const CeoDashboard = () => {
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
 
-  const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = async (event: React.SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const payload = {
@@ -272,8 +272,8 @@ const CeoDashboard = () => {
                     <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                     <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} unit="%" />
                     <Tooltip
-                      formatter={(value: number) => [`${Number(value).toFixed(1)}%`, 'Attendance Rate']}
-                      labelFormatter={(value: any) => `Week of ${String(value)}`}
+                      formatter={(value: number) => [`${value.toFixed(1)}%`, 'Attendance Rate']}
+                      labelFormatter={(value: string) => `Week of ${value}`}
                     />
                     <Line
                       type="monotone"
@@ -308,7 +308,7 @@ const CeoDashboard = () => {
         </p>
       </header>
 
-      <form className="grid grid-cols-[1.2fr_1fr_0.8fr_auto] gap-[0.6rem] bg-[var(--card)] text-[var(--card-foreground)] border border-[var(--border)] rounded-2xl p-[0.9rem]" onSubmit={handleCreate}>
+      <form className="grid grid-cols-[1.2fr_1fr_0.8fr_auto] gap-[0.6rem] bg-[var(--card)] text-[var(--card-foreground)] border border-[var(--border)] rounded-2xl p-[0.9rem]" onSubmit={(event) => void handleCreate(event)}>
         <input
           className="min-h-[40px] border border-[var(--border)] rounded-[10px] px-[0.7rem] bg-[var(--input-background)] text-[var(--foreground)]"
           value={name}
@@ -371,7 +371,8 @@ const CeoDashboard = () => {
       ) : (
         <section className="grid grid-cols-4 gap-4">
           {departments.map(dep => {
-            const Icon = iconMap[(dep.icon as keyof typeof iconMap) ?? 'Building2'] ?? FiHome
+            const iconName = dep.icon ?? 'Building2'
+            const Icon = iconName in iconMap ? iconMap[iconName as keyof typeof iconMap] : FiHome
             return (
               <article key={dep.id} className="bg-[var(--card)] text-[var(--card-foreground)] border border-[var(--border)] rounded-2xl p-4 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
@@ -381,7 +382,7 @@ const CeoDashboard = () => {
                   <button
                     type="button"
                     className="w-[34px] h-[34px] rounded-lg border border-[var(--border)] bg-transparent text-[var(--destructive)] grid place-items-center cursor-pointer hover:bg-[#d1353b14]"
-                    onClick={() => handleDelete(dep.id)}
+                    onClick={() => void handleDelete(dep.id)}
                     aria-label={`Delete ${dep.name}`}
                   >
                     <FiTrash2 />

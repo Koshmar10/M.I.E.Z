@@ -88,8 +88,8 @@ export default function PayrollSummaryPage() {
 
       try {
         const data = await api.get<PayrollResponse>('/api/payroll/', { month })
-        setRows(Array.isArray(data?.payroll) ? data.payroll : [])
-        setSummary(data?.summary ?? null)
+        setRows(data.payroll)
+        setSummary(data.summary)
       } catch (err) {
         console.error('Failed to load payroll summary', err)
         setRows([])
@@ -100,7 +100,7 @@ export default function PayrollSummaryPage() {
       }
     }
 
-    loadPayroll()
+    void loadPayroll()
   }, [month])
 
   const processingLabel = useMemo(() => {

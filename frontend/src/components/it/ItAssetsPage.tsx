@@ -220,8 +220,8 @@ export default function ItAssetsPage() {
   }
 
   useEffect(() => {
-    loadAssets()
-    loadEmployees()
+    void loadAssets()
+    void loadEmployees()
   }, [])
 
   const filteredAssets = useMemo(() => {
@@ -404,7 +404,7 @@ export default function ItAssetsPage() {
 
           <button
             type="button"
-            onClick={loadAssets}
+            onClick={() => void loadAssets()}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm font-medium transition-colors hover:bg-[var(--input-background)]"
           >
             <FiRefreshCw />
@@ -484,7 +484,7 @@ export default function ItAssetsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={createAsset}
+                  onClick={() => void createAsset()}
                   disabled={savingCreate}
                   className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -527,13 +527,13 @@ export default function ItAssetsPage() {
             </div>
 
             <div className="border-t border-[var(--border)] px-5 py-4 flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-3">
-              <button type="button" onClick={deleteAsset} disabled={savingEdit} className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 transition-colors disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" onClick={() => void deleteAsset()} disabled={savingEdit} className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100 transition-colors disabled:cursor-not-allowed disabled:opacity-60">
                 Delete
               </button>
               <button type="button" onClick={closeAsset} className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--input-background)] transition-colors">
                 Close
               </button>
-              <button type="button" onClick={saveAsset} disabled={savingEdit} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" onClick={() => void saveAsset()} disabled={savingEdit} className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
                 {savingEdit ? 'Saving...' : 'Save Changes'}
               </button>
             </div>

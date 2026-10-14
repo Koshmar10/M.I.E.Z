@@ -54,7 +54,7 @@ export default function UpcomingEventsWidget() {
       setLoading(true)
       try {
         const data = await api.get<UpcomingEventsResponse>('/api/hr/upcoming-events/', { days: 30 })
-        setEvents(Array.isArray(data?.events) ? data.events : [])
+        setEvents(data.events)
       } catch (error) {
         console.error('Failed to load upcoming events', error)
         setEvents([])
@@ -63,7 +63,7 @@ export default function UpcomingEventsWidget() {
       }
     }
 
-    loadEvents()
+    void loadEvents()
   }, [])
 
   const visibleEvents = useMemo(() => events.slice(0, 8), [events])

@@ -126,20 +126,20 @@ const MiezAssistant = () => {
     if (stored) {
       const id = parseInt(stored, 10);
       if (!isNaN(id) && sessionId !== id) {
-        loadSession(id).then((ok) => {
+        void loadSession(id).then((ok) => {
           if (ok) {
             setView("chat");
           } else {
             setView("list");
-            fetchSessions();
+            void fetchSessions();
           }
         });
       }
     } else {
       setView("list");
-      fetchSessions();
+      void fetchSessions();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- restore the last conversation once each time the panel opens, not on every state change
   }, [open]);
 
   useEffect(() => {
@@ -152,7 +152,7 @@ const MiezAssistant = () => {
 
   const goToList = () => {
     setView("list");
-    fetchSessions();
+    void fetchSessions();
   };
 
   const openSession = async (id: number) => {
@@ -167,7 +167,7 @@ const MiezAssistant = () => {
     setSessionId(null);
     setMessages([]);
     setInput("");
-    if (user) localStorage.removeItem(SESSION_KEY(user.id));
+    localStorage.removeItem(SESSION_KEY(user.id));
     setView("chat");
   };
 
@@ -200,8 +200,12 @@ const MiezAssistant = () => {
 
   const deleteSession = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
-    await api.delete(`/api/assistant/sessions/${id}/`);
-    if (user && localStorage.getItem(SESSION_KEY(user.id)) === String(id)) {
+    try {
+      await api.delete(`/api/assistant/sessions/${id}/`);
+    } catch {
+      return; // keep it in the list; it wasn't deleted
+    }
+    if (localStorage.getItem(SESSION_KEY(user.id)) === String(id)) {
       localStorage.removeItem(SESSION_KEY(user.id));
     }
     setSessions((prev) => prev.filter((s) => s.id !== id));
@@ -269,7 +273,7 @@ const MiezAssistant = () => {
                   {sessions.map((s) => (
                     <li
                       key={s.id}
-                      onClick={() => openSession(s.id)}
+                      onClick={() => void openSession(s.id)}
                       className="flex items-start gap-3 px-4 py-3 hover:bg-white cursor-pointer group"
                     >
                       <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center text-red-500 text-xs font-bold shrink-0 mt-0.5">M</div>
@@ -278,7 +282,7 @@ const MiezAssistant = () => {
                         <div className="text-sm text-gray-700 truncate">{s.preview || "Empty conversation"}</div>
                       </div>
                       <button
-                        onClick={(e) => deleteSession(e, s.id)}
+                        onClick={(e) => void deleteSession(e, s.id)}
                         className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-sm shrink-0 mt-1"
                         title="Delete"
                       >
@@ -311,7 +315,7 @@ const MiezAssistant = () => {
                             {config.suggested.map((s) => (
                               <button
                                 key={s}
-                                onClick={() => send(s)}
+                                onClick={() => void send(s)}
                                 className="w-full text-left text-sm px-3 py-2 rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-colors cursor-pointer"
                               >
                                 {s}
@@ -356,13 +360,15 @@ const MiezAssistant = () => {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && send(input)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void send(input);
+                  }}
                   placeholder="Type a message..."
                   disabled={loading || restoring}
                   className="flex-1 text-sm px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-1 focus:ring-gray-300 bg-gray-50 disabled:opacity-50"
                 />
                 <button
-                  onClick={() => send(input)}
+                  onClick={() => void send(input)}
                   disabled={loading || restoring || !input.trim()}
                   className="h-9 w-9 rounded-full bg-red-400 hover:bg-red-500 flex items-center justify-center text-white disabled:opacity-40 cursor-pointer transition-colors shrink-0"
                 >

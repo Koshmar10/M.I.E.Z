@@ -30,7 +30,7 @@ export default function LowStockPage() {
 
   const openReceive = (p: ApiProduct) => {
     const params = new URLSearchParams({ productId: String(p.id), sku: p.sku, name: p.name })
-    navigate(`/inventory/receive-stock?${params.toString()}`)
+    void navigate(`/inventory/receive-stock?${params.toString()}`)
   }
 
   if (loading) return null

@@ -704,7 +704,7 @@ const ItTicketsSection = ({
               {canManageTicket && selectedTicket.status === "OPEN" && (
                 <button
                   type="button"
-                  onClick={() => updateTicketStatus("IN_PROGRESS")}
+                  onClick={() => void updateTicketStatus("IN_PROGRESS")}
                   disabled={isUpdatingTicket}
                   className="cursor-pointer bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg px-3.5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -715,7 +715,7 @@ const ItTicketsSection = ({
               {canManageTicket && selectedTicket.status === "IN_PROGRESS" && (
                 <button
                   type="button"
-                  onClick={() => updateTicketStatus("RESOLVED")}
+                  onClick={() => void updateTicketStatus("RESOLVED")}
                   disabled={isUpdatingTicket}
                   className="cursor-pointer bg-[var(--primary)] text-[var(--primary-foreground)] rounded-lg px-3.5 py-2 text-sm font-semibold hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
                 >

@@ -36,7 +36,7 @@ const CreateTicketPage = () => {
     }))
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
     setIsSubmitting(true)
@@ -83,7 +83,7 @@ const CreateTicketPage = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
           {/* Title */}
           <div>
             <label htmlFor="title" className="block text-sm font-medium mb-2 text-[var(--card-foreground)]">
@@ -187,7 +187,7 @@ const CreateTicketPage = () => {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/it/tickets')}
+              onClick={() => void navigate('/it/tickets')}
               className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2 px-4 rounded-md transition-colors"
             >
               Cancel

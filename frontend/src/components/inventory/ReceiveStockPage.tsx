@@ -47,7 +47,7 @@ export default function ReceiveStockPage() {
   }
 
   useEffect(() => {
-    fetchDeliveries()
+    void fetchDeliveries()
     api.get<Product[]>('/api/inventory/products/').then(setProducts).catch(() => undefined)
     api.get<Array<{ id: number; name: string }>>('/api/inventory/suppliers/').then(setSuppliers).catch(() => undefined)
   }, [])
@@ -106,13 +106,13 @@ export default function ReceiveStockPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'Product *', field: 'product', type: 'select', options: products.map(p => ({ value: String(p.id), label: p.name })) },
-              { label: 'Supplier *', field: 'supplier', type: 'select', options: suppliers.map(s => ({ value: String(s.id), label: s.name })) },
+              { label: 'Product *', field: 'product' as const, type: 'select', options: products.map(p => ({ value: String(p.id), label: p.name })) },
+              { label: 'Supplier *', field: 'supplier' as const, type: 'select', options: suppliers.map(s => ({ value: String(s.id), label: s.name })) },
             ].map(({ label, field, options }) => (
               <div key={field} className="flex flex-col gap-1.5">
                 <label className="text-[0.72rem] font-medium text-[var(--muted-foreground)] uppercase tracking-wide">{label}</label>
                 <select
-                  value={(form as any)[field]}
+                  value={form[field]}
                   onChange={e => setForm({ ...form, [field]: e.target.value })}
                   className="h-9 px-3 text-[0.875rem] rounded-lg border border-[var(--border)] bg-[var(--input-background)] text-[var(--card-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                 >
@@ -156,7 +156,7 @@ export default function ReceiveStockPage() {
           <div className="mt-4 flex items-center gap-3 pt-4 border-t border-[var(--border)]">
             <button
               disabled={!form.product || !form.supplier || !form.qty || Number(form.qty) <= 0 || isSubmitting}
-              onClick={handleSubmit}
+              onClick={() => void handleSubmit()}
               className="h-9 px-4 text-[0.875rem] font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isSubmitting ? 'Saving…' : 'Confirm receipt'}

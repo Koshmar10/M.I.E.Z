@@ -78,7 +78,7 @@ export default function ContractsPage() {
       setLoading(true)
       try {
         const data = await api.get<ContractsResponse>('/api/contracts/')
-        setContracts(Array.isArray(data?.contracts) ? data.contracts : [])
+        setContracts(data.contracts)
       } catch (error) {
         console.error('Failed to load contracts', error)
         setContracts([])
@@ -87,7 +87,7 @@ export default function ContractsPage() {
       }
     }
 
-    loadContracts()
+    void loadContracts()
   }, [])
 
   const filteredContracts = useMemo(() => {
@@ -103,7 +103,7 @@ export default function ContractsPage() {
   }), [contracts])
 
   const openContract = (id: number) => {
-    navigate(`/hr/contracts/${id}`)
+    void navigate(`/hr/contracts/${id}`)
   }
 
   return (

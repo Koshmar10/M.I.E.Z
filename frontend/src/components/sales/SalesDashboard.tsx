@@ -183,7 +183,7 @@ const SalesDashboard = () => {
       }
     }
 
-    loadKpis()
+    void loadKpis()
   }, [])
 
   useEffect(() => {
@@ -229,7 +229,7 @@ const SalesDashboard = () => {
       }
     }
 
-    loadAnalytics()
+    void loadAnalytics()
   }, [])
 
   useEffect(() => {
@@ -253,11 +253,11 @@ const SalesDashboard = () => {
         }
 
         const data = await api.get<OrderListResponse>(`/api/orders/?${params.toString()}`)
-        setOrders(Array.isArray(data.results) ? data.results : [])
-        setTotalCount(data.total_count ?? 0)
-        setTotalRonSum(data.total_ron_sum ?? '0')
-        setNextPageUrl(data.next ?? null)
-        setPreviousPageUrl(data.previous ?? null)
+        setOrders(data.results)
+        setTotalCount(data.total_count)
+        setTotalRonSum(data.total_ron_sum)
+        setNextPageUrl(data.next)
+        setPreviousPageUrl(data.previous)
       } catch (error) {
         console.error('Failed to load orders list:', error)
         setOrdersError('Could not load orders right now.')
@@ -266,7 +266,7 @@ const SalesDashboard = () => {
       }
     }
 
-    loadOrders()
+    void loadOrders()
   }, [search, statusFilter, channelFilter, page])
 
   const openOrderDetail = async (orderId: number) => {
@@ -491,7 +491,7 @@ const SalesDashboard = () => {
                     <tr
                       key={order.id}
                       className="border-t border-[var(--border)] cursor-pointer hover:bg-[var(--input-background)] transition-colors"
-                      onClick={() => openOrderDetail(order.id)}
+                      onClick={() => void openOrderDetail(order.id)}
                     >
                       <td className="px-4 py-2.5 font-semibold">{order.order_number}</td>
                       <td className="px-4 py-2.5">{order.customer_name}</td>

@@ -56,7 +56,7 @@ const ItAssignedPage = () => {
       }
     };
 
-    fetchAssigned();
+    void fetchAssigned();
   }, []);
 
   return (

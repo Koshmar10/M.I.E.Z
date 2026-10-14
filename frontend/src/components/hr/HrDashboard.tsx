@@ -30,10 +30,17 @@ type AgentReport = {
     content: string
     tool_calls: number
     summary_line?: string
-    critical?: any[]
-    warning?: any[]
-    info?: any[]
+    critical?: DigestInsight[]
+    warning?: DigestInsight[]
+    info?: DigestInsight[]
   } | null
+}
+
+/** One finding in the HR digest (see DigestGenerator in the backend). */
+type DigestInsight = {
+  title: string
+  description: string
+  suggested_action: string
 }
 
 type Tab = 'overview' | 'agent-reports'
@@ -254,7 +261,7 @@ const HrDashboard = () => {
             </div>
             {(isCeo || isHr) && (
               <button
-                onClick={triggerAgent}
+                onClick={() => void triggerAgent()}
                 disabled={isPolling}
                 className="shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
               >
@@ -336,9 +343,8 @@ const HrDashboard = () => {
               </p>
 
               {(() => {
-                const data = latestDigest.digest_data as any;
-                const critical: any[] = Array.isArray(data.critical) ? data.critical : [];
-                const warning: any[] = Array.isArray(data.warning) ? data.warning : [];
+                const critical = latestDigest.digest_data.critical ?? [];
+                const warning = latestDigest.digest_data.warning ?? [];
 
                 if (critical.length === 0 && warning.length === 0) {
                   return (
@@ -352,8 +358,8 @@ const HrDashboard = () => {
                 }
 
                 const itemsToShow = [
-                  ...critical.map((c: any) => ({...c, level: 'CRITICAL'})), 
-                  ...warning.map((w: any) => ({...w, level: 'WARNING'}))
+                  ...critical.map(c => ({ ...c, level: 'CRITICAL' as const })),
+                  ...warning.map(w => ({ ...w, level: 'WARNING' as const })),
                 ].slice(0, 2);
 
                 return (
@@ -559,7 +565,7 @@ const HrDashboard = () => {
                           {emp.role}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-sm text-[var(--muted-foreground)]">{emp.employment_type?.replace('_', ' ') ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-sm text-[var(--muted-foreground)]">{emp.employment_type.replace('_', ' ')}</td>
                       <td className="px-4 py-2.5 text-sm text-[var(--muted-foreground)]">{formatDate(emp.start_date)}</td>
                     </tr>
                   ))}

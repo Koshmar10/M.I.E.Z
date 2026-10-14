@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FiClock, FiDownload, FiEye, FiFileText, FiPrinter, FiRefreshCw, FiX } from 'react-icons/fi'
 import { api, ApiError, errorMessage } from '../../api/client'
 
@@ -149,7 +149,7 @@ function GenerateModal({
           ) : (
             <button
               type="button"
-              onClick={handleSubmit}
+              onClick={() => void handleSubmit()}
               disabled={!slug || state === 'loading'}
               className="flex items-center gap-2 px-4 py-1.5 text-sm rounded-lg bg-[var(--primary)] text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
@@ -253,16 +253,16 @@ export default function ReportsPage() {
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [viewingReport, setViewingReport] = useState<Report | null>(null)
 
-  const fetchReports = () => {
+  const fetchReports = useCallback(() => {
     setLoading(true)
     const params = activeCategory !== 'All' ? `?category=${activeCategory}` : ''
     api.get<Report[]>(`/api/reports/${params}`)
       .then(setReports)
       .catch(() => setReports([]))
       .finally(() => setLoading(false))
-  }
+  }, [activeCategory])
 
-  useEffect(() => { fetchReports() }, [activeCategory])
+  useEffect(() => { fetchReports() }, [fetchReports])
 
   const handleDownload = async (report: Report) => {
     if (!report.file_available || downloading === report.id) return
@@ -357,7 +357,7 @@ export default function ReportsPage() {
                           <FiEye className="w-3.5 h-3.5" /> View
                         </button>
                         <button
-                          onClick={() => handleDownload(report)}
+                          onClick={() => void handleDownload(report)}
                           disabled={!report.file_available || downloading === report.id}
                           className={`flex items-center gap-1.5 text-xs font-semibold transition-colors ${
                             report.file_available

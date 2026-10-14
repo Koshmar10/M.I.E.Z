@@ -46,10 +46,10 @@ export default function SettingsPage() {
         setLoading(false);
       }
     };
-    fetchProfile();
+    void fetchProfile();
   }, []);
 
-  const handleProfileSubmit = async (e: React.FormEvent) => {
+  const handleProfileSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSavingProfile(true);
     setProfileStatus({ type: '', message: '' });
@@ -69,7 +69,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setPasswordStatus({ type: '', message: '' });
 
@@ -136,7 +136,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <form onSubmit={handleProfileSubmit} className="space-y-5">
+            <form onSubmit={(e) => void handleProfileSubmit(e)} className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">First Name</label>
@@ -206,7 +206,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <form onSubmit={handlePasswordSubmit} className="space-y-5">
+            <form onSubmit={(e) => void handlePasswordSubmit(e)} className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Current Password</label>
                 <input

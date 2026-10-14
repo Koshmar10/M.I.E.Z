@@ -48,7 +48,7 @@ const CeoInventorySummary = () => {
       }
     }
 
-    load()
+    void load()
   }, [])
 
   const kpiTiles = useMemo(() => {

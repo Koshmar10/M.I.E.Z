@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type SyntheticEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, fieldErrors } from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
@@ -74,7 +74,7 @@ const EmployeeDetailPage = () => {
     department: '',
     is_active: true,
   })
-  const [editErrors, setEditErrors] = useState<Record<string, string[]>>({})
+  const [editErrors, setEditErrors] = useState<Partial<Record<string, string[]>>>({})
 
   useEffect(() => {
     const fetchEmployee = async () => {
@@ -97,7 +97,7 @@ const EmployeeDetailPage = () => {
       }
     }
 
-    fetchEmployee()
+    void fetchEmployee()
   }, [id])
 
   useEffect(() => {
@@ -110,7 +110,7 @@ const EmployeeDetailPage = () => {
       }
     }
 
-    fetchDepartments()
+    void fetchDepartments()
   }, [])
 
   const displayName = useMemo(() => {
@@ -141,7 +141,7 @@ const EmployeeDetailPage = () => {
     }))
   }
 
-  const handleEditSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleEditSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     if (!id) {
@@ -193,7 +193,7 @@ const EmployeeDetailPage = () => {
         <button
           type="button"
           className="self-start border border-[var(--border)] bg-[var(--card)] text-[var(--card-foreground)] rounded-[10px] px-3 py-[0.45rem] cursor-pointer font-semibold"
-          onClick={() => navigate(-1)}
+          onClick={() => void navigate(-1)}
         >
           Back
         </button>
@@ -229,7 +229,7 @@ const EmployeeDetailPage = () => {
           <button
             type="button"
             className="border border-[var(--border)] bg-[var(--card)] text-[var(--card-foreground)] rounded-[10px] px-3 py-[0.45rem] cursor-pointer font-semibold"
-            onClick={() => navigate(-1)}
+            onClick={() => void navigate(-1)}
           >
             Back to list
           </button>
@@ -240,7 +240,7 @@ const EmployeeDetailPage = () => {
         <section className="border border-[var(--border)] rounded-xl p-4 bg-[var(--card)]">
           <h3 className="text-[1rem] font-semibold mb-3">Edit employee</h3>
 
-          <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleEditSubmit}>
+          <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={(event) => void handleEditSubmit(event)}>
             <input
               className="min-h-[40px] border border-[var(--border)] rounded-[10px] px-[0.7rem] bg-[var(--card)] text-[var(--card-foreground)]"
               value={editFormData.first_name}
